@@ -3,6 +3,7 @@
 #include "KoreAppDelegate.m.h"
 #include "audio.m.h"
 #include "display.m.h"
+#include "gamepad.m.h"
 #include "motion.m.h"
 #include "mouse.c.h"
 #include "system.m.h"
