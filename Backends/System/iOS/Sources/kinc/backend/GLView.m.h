@@ -101,6 +101,26 @@ extern int kinc_ios_gl_framebuffer;
 	metalLayer.opaque = YES;
 	metalLayer.backgroundColor = nil;
 
+	// Start accelerometer.  Mirrors the OpenGL initWithFrame below —
+	// the push handler must be installed for the Metal path too,
+	// otherwise no acceleration events ever fire on Metal builds.
+	hasAccelerometer = false;
+#ifndef KINC_TVOS
+	motionManager = [[CMMotionManager alloc] init];
+	if ([motionManager isAccelerometerAvailable]) {
+		motionManager.accelerometerUpdateInterval = 0.033;
+		[motionManager startAccelerometerUpdatesToQueue:[NSOperationQueue mainQueue]
+		                                    withHandler:^(CMAccelerometerData *data, NSError *error) {
+			if (data != nil) {
+				kinc_internal_on_acceleration(data.acceleration.x,
+				                              data.acceleration.y,
+				                              data.acceleration.z);
+			}
+		}];
+		hasAccelerometer = true;
+	}
+#endif
+
 	return self;
 }
 #else
