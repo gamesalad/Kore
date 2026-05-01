@@ -1,4 +1,5 @@
 #include <kinc/backend/HIDManager.h>
+#include <kinc/input/gamepad.h>
 #include <kinc/log.h>
 
 static int initHIDManager(struct HIDManager *manager);
@@ -116,6 +117,10 @@ void deviceConnected(void *inContext, IOReturn inResult, void *inSender, IOHIDDe
 			device->connected = true;
 			device->device = inIOHIDDeviceRef;
 			HIDGamepad_bind(&device->pad, inIOHIDDeviceRef, i);
+			// Fire the kinc-level connect event so backends that
+			// register kinc_gamepad_set_connect_callback see the
+			// real OS event instead of relying on a polling fallback.
+			kinc_internal_gamepad_trigger_connect(i);
 			break;
 		}
 	}
@@ -134,6 +139,7 @@ void deviceRemoved(void *inContext, IOReturn inResult, void *inSender, IOHIDDevi
 			device->connected = false;
 			device->device = NULL;
 			HIDGamepad_unbind(&device->pad);
+			kinc_internal_gamepad_trigger_disconnect(i);
 			break;
 		}
 	}

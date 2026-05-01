@@ -194,11 +194,14 @@ void kinc_gamepad_rumble(int gamepad, float left, float right) {
 
 #else  // KINC_NO_GAMEPAD_IOS
 
-// Original stubs — kept for builds that opt out of GameController.framework
-// linkage (App Store submission concern for games that don't declare gamepad use).
+// Opt-out stubs — for builds that skip GameController.framework linkage
+// (App Store submission concern for games that don't declare gamepad use).
+// `connected` returns false so the Kha polling loop in Kore-hxcpp doesn't
+// register phantom slots (the previous `return true` flooded engine code
+// with bogus connect events that had to be filtered by id-string match).
 const char *kinc_gamepad_vendor(int gamepad)        { return "nobody"; }
 const char *kinc_gamepad_product_name(int gamepad)  { return "none"; }
-bool        kinc_gamepad_connected(int num)         { return true; }
+bool        kinc_gamepad_connected(int num)         { return false; }
 void        kinc_gamepad_rumble(int gp, float l, float r) {}
 
 #endif  // KINC_NO_GAMEPAD_IOS

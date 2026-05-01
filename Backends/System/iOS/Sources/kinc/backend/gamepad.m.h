@@ -22,6 +22,7 @@
 #import <GameController/GameController.h>
 
 #include <kinc/input/gamepad.h>
+#include <kinc/log.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -144,6 +145,36 @@ static void kinc_ios_gamepad_attach_handlers(GCController *controller, int slot)
 
 static void kinc_ios_gamepad_register(GCController *controller) {
 	if (kinc_ios_gamepad_slot(controller) >= 0) return;  // already known
+
+	// Skip controllers that aren't real input devices.  Phantom sources:
+	//  1. extendedGamepad nil — micro / Apple TV remote / non-extended
+	//     profiles that can't drive game input.
+	//  2. iOS Simulator virtual controller — fires
+	//     GCControllerDidConnectNotification with a synthetic GCController
+	//     whose productCategory == "MFi" and vendorName == "Gamepad".
+	//     Real MFi accessories report a brand-specific vendorName
+	//     (e.g. "Sony Computer Entertainment Wireless Controller",
+	//     "Backbone One", "Razer Kishi"), never the literal "Gamepad".
+	//  3. Empty / nil vendorName — defensive: real controllers always
+	//     populate it.
+	if (controller.extendedGamepad == nil) {
+		kinc_log(KINC_LOG_LEVEL_INFO, "[gamepad] skip: no extendedGamepad");
+		return;
+	}
+	NSString *vendor = controller.vendorName;
+	NSString *category = @"";
+	if (@available(iOS 13.0, *)) {
+		category = controller.productCategory != nil ? controller.productCategory : @"";
+	}
+	if (vendor == nil || vendor.length == 0) {
+		kinc_log(KINC_LOG_LEVEL_INFO, "[gamepad] skip: empty vendorName");
+		return;
+	}
+	if ([vendor isEqualToString:@"Gamepad"] && [category isEqualToString:@"MFi"]) {
+		kinc_log(KINC_LOG_LEVEL_INFO, "[gamepad] skip: simulator phantom (MFi/Gamepad)");
+		return;
+	}
+
 	int slot = kinc_ios_gamepad_assign_slot(controller);
 	if (slot < 0) return;  // out of slots
 	kinc_ios_gamepad_attach_handlers(controller, slot);

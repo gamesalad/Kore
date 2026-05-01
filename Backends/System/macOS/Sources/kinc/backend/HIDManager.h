@@ -24,5 +24,9 @@ struct HIDManager {
 	struct HIDManagerDeviceRecord devices[KINC_MAX_HID_DEVICES];
 };
 
+// Defined in system.m.h; exposed so HIDGamepad.c.h can answer
+// kinc_gamepad_{connected,vendor,product_name} from real HID state.
+extern struct HIDManager *kinc_macos_hid_manager;
+
 void HIDManager_init(struct HIDManager *manager);
 void HIDManager_destroy(struct HIDManager *manager);
