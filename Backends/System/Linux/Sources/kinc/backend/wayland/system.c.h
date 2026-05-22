@@ -146,7 +146,16 @@ static void wl_output_handle_mode(void *data, struct wl_output *wl_output, uint3
 	}
 }
 static void wl_output_handle_done(void *data, struct wl_output *wl_output) {
-	// struct kinc_wl_display *display = data;
+	struct kinc_wl_display *display = data;
+	for (int i = 0; i < display->num_modes; ++i) {
+		kinc_display_mode_t *mode = &display->modes[i];
+		if (display->physical_width > 0 && mode->width > 0) {
+			mode->pixels_per_inch = (int)((mode->width * 254 + display->physical_width * 5) / (display->physical_width * 10));
+		}
+		else if (display->scale > 0) {
+			mode->pixels_per_inch = display->scale * 96;
+		}
+	}
 }
 static void wl_output_handle_scale(void *data, struct wl_output *wl_output, int32_t factor) {
 	struct kinc_wl_display *display = data;

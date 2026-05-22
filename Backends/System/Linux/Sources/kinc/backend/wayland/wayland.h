@@ -229,7 +229,7 @@ struct kinc_wl_display {
 	int physical_height;
 	int subpixel;
 	enum wl_output_transform transform;
-	enum wl_output_subpixel scale;
+	int32_t scale;
 	kinc_display_mode_t modes[MAXIMUM_DISPLAY_MODES];
 };
 
