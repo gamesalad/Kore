@@ -125,7 +125,9 @@ kinc_display_mode_t kinc_x11_display_current_mode(int display_index) {
 		mode.y = display->y;
 		mode.width = mode_info->width;
 		mode.height = mode_info->height;
-		mode.pixels_per_inch = 96;
+		mode.pixels_per_inch = output_info->mm_width > 0
+		                          ? (int)((mode_info->width * 254 + output_info->mm_width * 5) / (output_info->mm_width * 10))
+		                          : 96;
 		mode.bits_per_pixel = 32;
 		if (mode_info->hTotal && mode_info->vTotal) {
 			mode.frequency = (mode_info->dotClock / (mode_info->hTotal * mode_info->vTotal));
@@ -205,7 +207,9 @@ kinc_display_mode_t kinc_x11_display_available_mode(int display_index, int mode_
 		mode.y = display->y;
 		mode.width = mode_info->width;
 		mode.height = mode_info->height;
-		mode.pixels_per_inch = 96;
+		mode.pixels_per_inch = output_info->mm_width > 0
+		                          ? (int)((mode_info->width * 254 + output_info->mm_width * 5) / (output_info->mm_width * 10))
+		                          : 96;
 		mode.bits_per_pixel = 32;
 		if (mode_info->hTotal && mode_info->vTotal) {
 			mode.frequency = (mode_info->dotClock / (mode_info->hTotal * mode_info->vTotal));
