@@ -160,19 +160,51 @@ void kinc_login(void) {}
 
 void kinc_unlock_achievement(int id) {}
 
+#ifndef KINC_NO_GAMEPAD_IOS
+
+// Implementations live in gamepad.m.h; iosunit.m includes both files
+// in the same translation unit so these can call across without
+// extra header plumbing.
+extern const char *kinc_ios_gamepad_vendor_for(int slot);
+extern const char *kinc_ios_gamepad_product_for(int slot);
+extern bool kinc_ios_gamepad_connected_for(int slot);
+static void kinc_ios_gamepad_init(void);
+
 const char *kinc_gamepad_vendor(int gamepad) {
-	return "nobody";
+	kinc_ios_gamepad_init();
+	return kinc_ios_gamepad_vendor_for(gamepad);
 }
 
 const char *kinc_gamepad_product_name(int gamepad) {
-	return "none";
+	kinc_ios_gamepad_init();
+	return kinc_ios_gamepad_product_for(gamepad);
 }
 
 bool kinc_gamepad_connected(int num) {
-	return true;
+	kinc_ios_gamepad_init();
+	return kinc_ios_gamepad_connected_for(num);
 }
 
-void kinc_gamepad_rumble(int gamepad, float left, float right) {}
+// Controller rumble is intentionally a no-op.  Device-vibration
+// (the GameSalad Buzz behavior) is handled in our own platform shim
+// (native/platform_ios.mm), not via kinc_gamepad_rumble.
+void kinc_gamepad_rumble(int gamepad, float left, float right) {
+	(void)gamepad; (void)left; (void)right;
+}
+
+#else  // KINC_NO_GAMEPAD_IOS
+
+// Opt-out stubs — for builds that skip GameController.framework linkage
+// (App Store submission concern for games that don't declare gamepad use).
+// `connected` returns false so the Kha polling loop in Kore-hxcpp doesn't
+// register phantom slots (the previous `return true` flooded engine code
+// with bogus connect events that had to be filtered by id-string match).
+const char *kinc_gamepad_vendor(int gamepad)        { return "nobody"; }
+const char *kinc_gamepad_product_name(int gamepad)  { return "none"; }
+bool        kinc_gamepad_connected(int num)         { return false; }
+void        kinc_gamepad_rumble(int gp, float l, float r) {}
+
+#endif  // KINC_NO_GAMEPAD_IOS
 
 int main(int argc, char *argv[]) {
 	int retVal = 0;

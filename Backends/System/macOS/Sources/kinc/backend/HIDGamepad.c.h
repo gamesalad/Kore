@@ -375,10 +375,30 @@ static void valueAvailableCallback(void *inContext, IOReturn inResult, void *inS
 	} while (1);
 }
 
+// Real HID values populated in HIDGamepad_bind (kIOHIDManufacturerKey /
+// kIOHIDProductKey).  Fall back to "unknown" if the slot is empty or
+// the device didn't expose those strings — engine-side phantom filter
+// uses "unknown" as the no-device sentinel.
 const char *kinc_gamepad_vendor(int gamepad) {
-	return "unknown";
+	if (kinc_macos_hid_manager == NULL) return "unknown";
+	if (gamepad < 0 || gamepad >= KINC_MAX_HID_DEVICES) return "unknown";
+	struct HIDManagerDeviceRecord *rec = &kinc_macos_hid_manager->devices[gamepad];
+	if (!rec->connected) return "unknown";
+	const char *s = rec->pad.hidDeviceVendor;
+	return (s != NULL && s[0] != '\0') ? s : "unknown";
 }
 
 const char *kinc_gamepad_product_name(int gamepad) {
-	return "unknown";
+	if (kinc_macos_hid_manager == NULL) return "unknown";
+	if (gamepad < 0 || gamepad >= KINC_MAX_HID_DEVICES) return "unknown";
+	struct HIDManagerDeviceRecord *rec = &kinc_macos_hid_manager->devices[gamepad];
+	if (!rec->connected) return "unknown";
+	const char *s = rec->pad.hidDeviceProduct;
+	return (s != NULL && s[0] != '\0') ? s : "unknown";
+}
+
+bool kinc_gamepad_connected(int num) {
+	if (kinc_macos_hid_manager == NULL) return false;
+	if (num < 0 || num >= KINC_MAX_HID_DEVICES) return false;
+	return kinc_macos_hid_manager->devices[num].connected;
 }

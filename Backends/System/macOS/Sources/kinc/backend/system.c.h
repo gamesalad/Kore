@@ -55,8 +55,8 @@ void kinc_login(void) {}
 
 void kinc_unlock_achievement(int id) {}
 
-bool kinc_gamepad_connected(int num) {
-	return true;
-}
+// kinc_gamepad_connected lives in HIDGamepad.c.h — answers from real
+// HIDManager state instead of a hardcoded `true` (which produced
+// phantom slot connect events on the Kha-side polling loop).
 
 void kinc_gamepad_rumble(int gamepad, float left, float right) {}

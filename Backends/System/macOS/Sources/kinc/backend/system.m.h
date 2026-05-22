@@ -44,7 +44,7 @@ static NSApplication *myapp;
 static NSWindow *window;
 static BasicOpenGLView *view;
 static KincAppDelegate *delegate;
-static struct HIDManager *hidManager;
+struct HIDManager *kinc_macos_hid_manager;
 
 /*struct KoreWindow : public KoreWindowBase {
     NSWindow* handle;
@@ -181,8 +181,8 @@ int kinc_init(const char *name, int width, int height, kinc_window_options_t *wi
 		[[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
 		NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
 
-		hidManager = (struct HIDManager *)malloc(sizeof(struct HIDManager));
-		HIDManager_init(hidManager);
+		kinc_macos_hid_manager = (struct HIDManager *)malloc(sizeof(struct HIDManager));
+		HIDManager_init(kinc_macos_hid_manager);
 		addMenubar();
 	}
 

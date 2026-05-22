@@ -101,6 +101,26 @@ extern int kinc_ios_gl_framebuffer;
 	metalLayer.opaque = YES;
 	metalLayer.backgroundColor = nil;
 
+	// Start accelerometer.  Mirrors the OpenGL initWithFrame below —
+	// the push handler must be installed for the Metal path too,
+	// otherwise no acceleration events ever fire on Metal builds.
+	hasAccelerometer = false;
+#ifndef KINC_TVOS
+	motionManager = [[CMMotionManager alloc] init];
+	if ([motionManager isAccelerometerAvailable]) {
+		motionManager.accelerometerUpdateInterval = 0.033;
+		[motionManager startAccelerometerUpdatesToQueue:[NSOperationQueue mainQueue]
+		                                    withHandler:^(CMAccelerometerData *data, NSError *error) {
+			if (data != nil) {
+				kinc_internal_on_acceleration(data.acceleration.x,
+				                              data.acceleration.y,
+				                              data.acceleration.z);
+			}
+		}];
+		hasAccelerometer = true;
+	}
+#endif
+
 	return self;
 }
 #else
@@ -139,13 +159,24 @@ extern int kinc_ios_gl_framebuffer;
 	glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES, GL_DEPTH_ATTACHMENT_OES, GL_RENDERBUFFER_OES, depthStencilRenderbuffer);
 	glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES, GL_STENCIL_ATTACHMENT_OES, GL_RENDERBUFFER_OES, depthStencilRenderbuffer);
 
-	// Start acceletometer
+	// Start accelerometer.  Use the push API (NSOperationQueue + handler
+	// block) instead of polling motionManager.accelerometerData each
+	// frame — the polled read used to live inside the OpenGL ES [begin]
+	// hook, so it never fired on the Metal render path.  The push API
+	// fires the handler regardless of which graphics backend is active.
 	hasAccelerometer = false;
 #ifndef KINC_TVOS
 	motionManager = [[CMMotionManager alloc] init];
 	if ([motionManager isAccelerometerAvailable]) {
 		motionManager.accelerometerUpdateInterval = 0.033;
-		[motionManager startAccelerometerUpdates];
+		[motionManager startAccelerometerUpdatesToQueue:[NSOperationQueue mainQueue]
+		                                    withHandler:^(CMAccelerometerData *data, NSError *error) {
+			if (data != nil) {
+				kinc_internal_on_acceleration(data.acceleration.x,
+				                              data.acceleration.y,
+				                              data.acceleration.z);
+			}
+		}];
 		hasAccelerometer = true;
 	}
 #endif
@@ -167,22 +198,9 @@ extern int kinc_ios_gl_framebuffer;
 	// glBindFramebufferOES(GL_FRAMEBUFFER_OES, defaultFramebuffer);
 	// glViewport(0, 0, backingWidth, backingHeight);
 
-#ifndef KINC_TVOS
-	// Accelerometer updates
-	if (hasAccelerometer) {
-
-		CMAcceleration acc = motionManager.accelerometerData.acceleration;
-
-		if (acc.x != lastAccelerometerX || acc.y != lastAccelerometerY || acc.z != lastAccelerometerZ) {
-
-			kinc_internal_on_acceleration(acc.x, acc.y, acc.z);
-
-			lastAccelerometerX = acc.x;
-			lastAccelerometerY = acc.y;
-			lastAccelerometerZ = acc.z;
-		}
-	}
-#endif
+	// Accelerometer is now driven by CMMotionManager's push handler
+	// installed in setupView (see startAccelerometerUpdatesToQueue:),
+	// so no per-frame poll is needed here.
 }
 #endif
 

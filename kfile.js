@@ -266,6 +266,15 @@ else if (platform === Platform.iOS || platform === Platform.tvOS) {
 	project.addLib('CoreFoundation');
 	project.addLib('CoreVideo');
 	project.addLib('CoreMedia');
+	// MFi gamepad support via GameController.framework. Apps that don't
+	// declare gamepad use can opt out by defining KINC_NO_GAMEPAD_IOS,
+	// which drops this framework dependency entirely.
+	if (!process.env.KINC_NO_GAMEPAD_IOS) {
+		project.addLib('GameController');
+	}
+	else {
+		addKincDefine('NO_GAMEPAD_IOS');
+	}
 }
 else if (platform === Platform.Android) {
 	addKincDefine('ANDROID');
