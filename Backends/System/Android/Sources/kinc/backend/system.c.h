@@ -874,18 +874,45 @@ jclass kinc_android_find_class(JNIEnv *env, const char *name) {
 #define UNICODE_STACK_SIZE 256
 static uint16_t unicode_stack[UNICODE_STACK_SIZE];
 static int unicode_stack_index = 0;
+// Pending UTF-8 text events from IME commitText (and onKeyMultiple).
+// Each entry is a null-terminated string queued for kinc_internal_keyboard_trigger_key_text.
+#define TEXT_QUEUE_SIZE 32
+#define TEXT_QUEUE_BUFFER_SIZE 4096
+static char text_queue_buffer[TEXT_QUEUE_BUFFER_SIZE];
+static int text_queue_buffer_used = 0;
+static int text_queue_offsets[TEXT_QUEUE_SIZE];
+static int text_queue_count = 0;
 static kinc_mutex_t unicode_mutex;
+
+static void enqueue_text_event_locked(const char *utf8, int utf8_len) {
+	if (text_queue_count >= TEXT_QUEUE_SIZE) return;
+	if (utf8_len <= 0 || text_queue_buffer_used + utf8_len + 1 > TEXT_QUEUE_BUFFER_SIZE) return;
+	text_queue_offsets[text_queue_count++] = text_queue_buffer_used;
+	memcpy(text_queue_buffer + text_queue_buffer_used, utf8, utf8_len);
+	text_queue_buffer_used += utf8_len;
+	text_queue_buffer[text_queue_buffer_used++] = '\0';
+}
 
 JNIEXPORT void JNICALL Java_tech_kore_KoreActivity_nativeKoreKeyPress(JNIEnv *env, jobject jobj, jstring chars) {
 	const jchar *text = (*env)->GetStringChars(env, chars, NULL);
 	const jsize length = (*env)->GetStringLength(env, chars);
+	const char *utf8 = (*env)->GetStringUTFChars(env, chars, NULL);
+	const jsize utf8_len = (*env)->GetStringUTFLength(env, chars);
 
 	kinc_mutex_lock(&unicode_mutex);
+	// Existing key_press path: push each UTF-16 code unit; drained on
+	// the main thread one at a time via key_press.
 	for (jsize i = 0; i < length && unicode_stack_index < UNICODE_STACK_SIZE; ++i) {
 		unicode_stack[unicode_stack_index++] = text[i];
 	}
+	// New key_text path: queue the full UTF-8 string for atomic dispatch.
+	// JNI's "modified UTF-8" matches standard UTF-8 for the BMP; non-BMP
+	// would use a 6-byte surrogate-pair encoding but Android IMEs in
+	// practice commit BMP characters here (CJK, Hangul, kana all BMP).
+	enqueue_text_event_locked(utf8, utf8_len);
 	kinc_mutex_unlock(&unicode_mutex);
 
+	(*env)->ReleaseStringUTFChars(env, chars, utf8);
 	(*env)->ReleaseStringChars(env, chars, text);
 }
 
@@ -1050,6 +1077,14 @@ bool kinc_internal_handle_messages(void) {
 		kinc_internal_keyboard_trigger_key_press(unicode_stack[i]);
 	}
 	unicode_stack_index = 0;
+	// Drain queued IME text events. Each entry was atomically committed
+	// from the IME (commitText / onKeyMultiple) and dispatches as a
+	// single text event regardless of how many codepoints it spans.
+	for (int i = 0; i < text_queue_count; ++i) {
+		kinc_internal_keyboard_trigger_key_text(text_queue_buffer + text_queue_offsets[i]);
+	}
+	text_queue_count = 0;
+	text_queue_buffer_used = 0;
 	kinc_mutex_unlock(&unicode_mutex);
 
 	int ident;
