@@ -234,9 +234,19 @@ KINC_FUNC void kinc_keyboard_set_key_up_callback(void (*value)(int /*key_code*/,
 /// <param name="value">The callback</param>
 KINC_FUNC void kinc_keyboard_set_key_press_callback(void (*value)(unsigned /*character*/, void * /*data*/), void *data);
 
+/// <summary>
+/// Sets the keyboard-key-text-callback which is called when the system delivers committed text — typically an IME composition result
+/// (CJK / Hangul / kana) or a multi-codepoint paste / autocorrect replacement. The string is UTF-8 and may span multiple codepoints,
+/// including characters outside the BMP. Use this for text-input that needs to support IME composition; use the key-press callback
+/// for raw single-character keystrokes.
+/// </summary>
+/// <param name="value">The callback</param>
+KINC_FUNC void kinc_keyboard_set_key_text_callback(void (*value)(const char * /*utf8*/, void * /*data*/), void *data);
+
 void kinc_internal_keyboard_trigger_key_down(int key_code);
 void kinc_internal_keyboard_trigger_key_up(int key_code);
 void kinc_internal_keyboard_trigger_key_press(unsigned character);
+void kinc_internal_keyboard_trigger_key_text(const char *utf8);
 
 #ifdef KINC_IMPLEMENTATION_INPUT
 #define KINC_IMPLEMENTATION
@@ -253,6 +263,8 @@ static void (*keyboard_key_up_callback)(int /*key_code*/, void * /*data*/) = NUL
 static void *keyboard_key_up_callback_data = NULL;
 static void (*keyboard_key_press_callback)(unsigned /*character*/, void * /*data*/) = NULL;
 static void *keyboard_key_press_callback_data = NULL;
+static void (*keyboard_key_text_callback)(const char * /*utf8*/, void * /*data*/) = NULL;
+static void *keyboard_key_text_callback_data = NULL;
 
 void kinc_keyboard_set_key_down_callback(void (*value)(int /*key_code*/, void * /*data*/), void *data) {
 	keyboard_key_down_callback = value;
@@ -267,6 +279,11 @@ void kinc_keyboard_set_key_up_callback(void (*value)(int /*key_code*/, void * /*
 void kinc_keyboard_set_key_press_callback(void (*value)(unsigned /*character*/, void * /*data*/), void *data) {
 	keyboard_key_press_callback = value;
 	keyboard_key_press_callback_data = data;
+}
+
+void kinc_keyboard_set_key_text_callback(void (*value)(const char * /*utf8*/, void * /*data*/), void *data) {
+	keyboard_key_text_callback = value;
+	keyboard_key_text_callback_data = data;
 }
 
 void kinc_internal_keyboard_trigger_key_down(int key_code) {
@@ -284,6 +301,12 @@ void kinc_internal_keyboard_trigger_key_up(int key_code) {
 void kinc_internal_keyboard_trigger_key_press(unsigned character) {
 	if (keyboard_key_press_callback != NULL) {
 		keyboard_key_press_callback(character, keyboard_key_press_callback_data);
+	}
+}
+
+void kinc_internal_keyboard_trigger_key_text(const char *utf8) {
+	if (keyboard_key_text_callback != NULL && utf8 != NULL) {
+		keyboard_key_text_callback(utf8, keyboard_key_text_callback_data);
 	}
 }
 
