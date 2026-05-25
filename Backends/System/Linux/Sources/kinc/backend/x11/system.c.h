@@ -297,15 +297,42 @@ bool kinc_x11_handle_messages() {
 			XKeyEvent *key = (XKeyEvent *)&event;
 			KeySym keysym;
 
-			wchar_t wchar;
-
-			bool wcConverted = xlib.XwcLookupString(k_window->xInputContext, key, &wchar, 1, &keysym, NULL);
+			// Buffer enlarged from 1 to 31 so IME commits (XIM/IBus/Fcitx)
+			// that yield multi-codepoint results aren't silently truncated.
+			wchar_t wcharbuf[32];
+			int wcharlen = xlib.XwcLookupString(k_window->xInputContext, key, wcharbuf, 31, &keysym, NULL);
 
 			bool isIgnoredKeySym = keysym == XK_Escape || keysym == XK_BackSpace || keysym == XK_Delete;
 			if (!controlDown && !xlib.XFilterEvent(&event, window) && !isIgnoredKeySym) {
 
-				if (wcConverted) {
-					kinc_internal_keyboard_trigger_key_press(wchar);
+				if (wcharlen > 0) {
+					// Existing key_press path — preserve single-wchar dispatch for back-compat.
+					kinc_internal_keyboard_trigger_key_press((unsigned)wcharbuf[0]);
+
+					// New key_text path — convert the full wide-char buffer to UTF-8
+					// so IME-composed multi-codepoint commits arrive intact.
+					char utf8buf[128];
+					int utf8len = 0;
+					for (int wi = 0; wi < wcharlen && utf8len < 124; ++wi) {
+						unsigned wc = (unsigned)wcharbuf[wi];
+						if (wc < 0x80) {
+							utf8buf[utf8len++] = (char)wc;
+						} else if (wc < 0x800) {
+							utf8buf[utf8len++] = (char)(0xC0 | (wc >> 6));
+							utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+						} else if (wc < 0x10000) {
+							utf8buf[utf8len++] = (char)(0xE0 | (wc >> 12));
+							utf8buf[utf8len++] = (char)(0x80 | ((wc >> 6) & 0x3F));
+							utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+						} else {
+							utf8buf[utf8len++] = (char)(0xF0 | (wc >> 18));
+							utf8buf[utf8len++] = (char)(0x80 | ((wc >> 12) & 0x3F));
+							utf8buf[utf8len++] = (char)(0x80 | ((wc >> 6) & 0x3F));
+							utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+						}
+					}
+					utf8buf[utf8len] = '\0';
+					kinc_internal_keyboard_trigger_key_text(utf8buf);
 				}
 			}
 

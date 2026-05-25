@@ -508,6 +508,34 @@ void wl_keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard, uint32_
 			kinc_internal_keyboard_trigger_key_down(kinc_key);
 			if (character != 0) {
 				kinc_internal_keyboard_trigger_key_press(character);
+
+				// New key_text path — encode the single codepoint as UTF-8.
+				// For direct typing this gives the same character; for
+				// non-BMP codepoints (rare via keyboard) the UTF-8 string
+				// preserves what key_press would have truncated.
+				// NOTE: IME composition on Wayland flows through the
+				// text-input-v3 protocol (separate from wl_keyboard) and is
+				// not yet wired here.
+				char utf8buf[8];
+				int utf8len = 0;
+				uint32_t wc = character;
+				if (wc < 0x80) {
+					utf8buf[utf8len++] = (char)wc;
+				} else if (wc < 0x800) {
+					utf8buf[utf8len++] = (char)(0xC0 | (wc >> 6));
+					utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+				} else if (wc < 0x10000) {
+					utf8buf[utf8len++] = (char)(0xE0 | (wc >> 12));
+					utf8buf[utf8len++] = (char)(0x80 | ((wc >> 6) & 0x3F));
+					utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+				} else {
+					utf8buf[utf8len++] = (char)(0xF0 | (wc >> 18));
+					utf8buf[utf8len++] = (char)(0x80 | ((wc >> 12) & 0x3F));
+					utf8buf[utf8len++] = (char)(0x80 | ((wc >> 6) & 0x3F));
+					utf8buf[utf8len++] = (char)(0x80 | (wc & 0x3F));
+				}
+				utf8buf[utf8len] = '\0';
+				kinc_internal_keyboard_trigger_key_text(utf8buf);
 				if (wl_xkb.xkb_keymap_key_repeats(keyboard->keymap, key + 8) && keyboard->repeat_rate > 0) {
 					struct itimerspec timer = {};
 					keyboard->last_character = character;

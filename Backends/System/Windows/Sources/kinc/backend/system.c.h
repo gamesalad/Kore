@@ -654,15 +654,57 @@ LRESULT WINAPI KoreWindowsMessageProcedure(HWND hWnd, UINT msg, WPARAM wParam, L
 
 		kinc_internal_keyboard_trigger_key_up(keyTranslated[wParam]);
 		break;
-	case WM_CHAR:
+	case WM_CHAR: {
+		// Buffer a UTF-16 high surrogate (0xD800-0xDBFF) and wait for the
+		// matching low surrogate (0xDC00-0xDFFF) in the next WM_CHAR before
+		// emitting the text event. Non-surrogate (BMP) WM_CHARs emit
+		// directly. WM_CHAR is also the path that IMEs use after
+		// WM_IME_COMPOSITION completes, so this covers CJK input too.
+		static WCHAR pending_high_surrogate = 0;
 		switch (wParam) {
 		case 0x1B: // escape
+			pending_high_surrogate = 0;
 			break;
-		default:
+		default: {
 			kinc_internal_keyboard_trigger_key_press((unsigned)wParam);
+
+			WCHAR wc = (WCHAR)wParam;
+			WCHAR utf16_pair[2];
+			int utf16_len = 0;
+			if (wc >= 0xD800 && wc <= 0xDBFF) {
+				// High surrogate — wait for the low surrogate.
+				pending_high_surrogate = wc;
+				break;
+			}
+			if (wc >= 0xDC00 && wc <= 0xDFFF) {
+				// Low surrogate — must pair with the buffered high surrogate.
+				if (pending_high_surrogate != 0) {
+					utf16_pair[0] = pending_high_surrogate;
+					utf16_pair[1] = wc;
+					utf16_len = 2;
+					pending_high_surrogate = 0;
+				} else {
+					// Orphan low surrogate — drop.
+					break;
+				}
+			} else {
+				utf16_pair[0] = wc;
+				utf16_len = 1;
+				pending_high_surrogate = 0;
+			}
+
+			// Convert UTF-16 to UTF-8 and dispatch via key_text.
+			char utf8buf[16];
+			int utf8len = WideCharToMultiByte(CP_UTF8, 0, utf16_pair, utf16_len, utf8buf, (int)sizeof(utf8buf) - 1, NULL, NULL);
+			if (utf8len > 0) {
+				utf8buf[utf8len] = '\0';
+				kinc_internal_keyboard_trigger_key_text(utf8buf);
+			}
 			break;
 		}
+		}
 		break;
+	}
 	case WM_SYSCOMMAND:
 		switch (wParam) {
 		case SC_KEYMENU:
