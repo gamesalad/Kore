@@ -376,6 +376,15 @@ static bool shiftDown = false;
 }
 
 - (void)insertText:(NSString *)text {
+	// Always dispatch the full UTF-8 string via the text callback —
+	// this is the IME / paste / autocorrect path that needs to carry
+	// multi-codepoint commits (CJK / Hangul / kana / emoji) intact.
+	if (text != nil && [text length] > 0) {
+		const char *utf8 = [text UTF8String];
+		if (utf8 != NULL) {
+			kinc_internal_keyboard_trigger_key_text(utf8);
+		}
+	}
 	if ([text length] == 1) {
 		unichar ch = [text characterAtIndex:[text length] - 1];
 		if (ch == 8212)
