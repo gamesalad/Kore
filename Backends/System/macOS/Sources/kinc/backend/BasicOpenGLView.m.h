@@ -86,6 +86,22 @@ static bool cmd = false;
 	NSString *characters = [theEvent charactersIgnoringModifiers];
 	if ([characters length]) {
 		unichar ch = [characters characterAtIndex:0];
+		// Dispatch text event for direct keystroke text — honors shift/alt
+		// (uses [theEvent characters] not charactersIgnoringModifiers).
+		// Skips Cocoa's function-key Private Use Area (arrows, F-keys, etc.).
+		// NOTE: this delivers direct-typed characters only. Full IME support
+		// (CJK pinyin candidate window, kana composition) requires the view
+		// to conform to NSTextInputClient and invoke interpretKeyEvents:.
+		// That's a separate, larger patch.
+		if (ch < 0xE000 || ch > 0xF8FF) {
+			NSString *typed = [theEvent characters];
+			if (typed != nil && [typed length] > 0) {
+				const char *utf8 = [typed UTF8String];
+				if (utf8 != NULL) {
+					kinc_internal_keyboard_trigger_key_text(utf8);
+				}
+			}
+		}
 		switch (ch) { // keys that exist in keydown and keypress events
 		case 59:
 			kinc_internal_keyboard_trigger_key_down(KINC_KEY_SEMICOLON);
