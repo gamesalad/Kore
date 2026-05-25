@@ -2,7 +2,9 @@
 
 #import <Cocoa/Cocoa.h>
 
+#ifndef KINC_NO_GAMEPAD_MACOS
 #include <kinc/backend/HIDManager.h>
+#endif
 #include <kinc/graphics4/graphics.h>
 #include <kinc/input/keyboard.h>
 #include <kinc/log.h>
@@ -44,7 +46,9 @@ static NSApplication *myapp;
 static NSWindow *window;
 static BasicOpenGLView *view;
 static KincAppDelegate *delegate;
+#ifndef KINC_NO_GAMEPAD_MACOS
 struct HIDManager *kinc_macos_hid_manager;
+#endif
 
 /*struct KoreWindow : public KoreWindowBase {
     NSWindow* handle;
@@ -181,8 +185,10 @@ int kinc_init(const char *name, int width, int height, kinc_window_options_t *wi
 		[[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
 		NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
 
+#ifndef KINC_NO_GAMEPAD_MACOS
 		kinc_macos_hid_manager = (struct HIDManager *)malloc(sizeof(struct HIDManager));
 		HIDManager_init(kinc_macos_hid_manager);
+#endif
 		addMenubar();
 	}
 
