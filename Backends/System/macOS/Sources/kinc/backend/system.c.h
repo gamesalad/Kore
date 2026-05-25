@@ -58,5 +58,16 @@ void kinc_unlock_achievement(int id) {}
 // kinc_gamepad_connected lives in HIDGamepad.c.h — answers from real
 // HIDManager state instead of a hardcoded `true` (which produced
 // phantom slot connect events on the Kha-side polling loop).
+//
+// Opt-out stubs for KINC_NO_GAMEPAD_MACOS — when the HID TUs are
+// compiled out, the kinc_gamepad_{vendor,product_name,connected}
+// symbols must still resolve at link time. Mirror the iOS opt-out
+// stubs in iOS/system.m.h; "nobody"/"none" are the sentinels the
+// engine-side phantom filter ignores.
+#ifdef KINC_NO_GAMEPAD_MACOS
+const char *kinc_gamepad_vendor(int gamepad)       { return "nobody"; }
+const char *kinc_gamepad_product_name(int gamepad) { return "none"; }
+bool        kinc_gamepad_connected(int num)        { return false; }
+#endif
 
 void kinc_gamepad_rumble(int gamepad, float left, float right) {}

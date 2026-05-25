@@ -14,8 +14,10 @@ static struct WindowData windows[10] = {};
 static int windowCounter = 0;
 
 #include "BasicOpenGLView.m.h"
+#ifndef KINC_NO_GAMEPAD_MACOS
 #include "HIDGamepad.c.h"
 #include "HIDManager.c.h"
+#endif
 #include "audio.c.h"
 #include "display.m.h"
 #include "mouse.m.h"

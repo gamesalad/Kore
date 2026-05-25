@@ -230,6 +230,14 @@ else if (platform === Platform.OSX) {
 	project.addLib('CoreVideo');
 	project.addLib('AVFoundation');
 	project.addLib('Foundation');
+	// HID gamepad support via IOKit's IOHIDManager. Apps that don't
+	// declare gamepad use can opt out by defining KINC_NO_GAMEPAD_MACOS,
+	// which drops the HIDManager/HIDGamepad translation units (no
+	// IOHIDManager*/IOHIDDevice* symbol references in the binary).
+	// IOKit itself stays linked — many other subsystems use it.
+	if (process.env.KINC_NO_GAMEPAD_MACOS) {
+		addKincDefine('NO_GAMEPAD_MACOS');
+	}
 }
 else if (platform === Platform.iOS || platform === Platform.tvOS) {
 	if (platform === Platform.tvOS) {
