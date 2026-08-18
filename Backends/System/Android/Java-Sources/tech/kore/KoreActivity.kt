@@ -161,5 +161,16 @@ class KoreActivity: NativeActivity(), KeyEvent.Callback {
 		return false
 	}
 
+	// gs-engine2: NativeActivity.onResume() (never overridden here, so the
+	// framework default runs) calls getWindow().takeInputQueue(this), which
+	// routes the entire raw input stream — including hardware/gesture Back —
+	// to native code via the NDK's AInputQueue. That bypasses this Activity's
+	// dispatchKeyEvent/onKeyDown path entirely for that event class, so a Back
+	// handler here would never fire. The real interception point is native:
+	// Kore's system.c.h `input()` callback (AKEYCODE_BACK case) consults the
+	// per-game quit policy and calls ANativeActivity_finish() itself. See
+	// native/platform_android.cpp and Sources/gse/native/NativePlatform.hx in
+	// gs-engine2 for where the policy value comes from.
+
 	private external fun nativeKoreKeyPress(chars: String)
 }
