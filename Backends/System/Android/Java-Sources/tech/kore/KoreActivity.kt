@@ -161,5 +161,21 @@ class KoreActivity: NativeActivity(), KeyEvent.Callback {
 		return false
 	}
 
+	// gs-engine2: the hardware/gesture Back key otherwise falls through to
+	// the framework default (Activity.onBackPressed() -> finish()), which
+	// force-quits straight to the launcher. Whether that's the right
+	// behavior is a per-game publishing decision, not an engine constant,
+	// so the actual policy lives outside this vendored fork — GsePlatform
+	// just answers a question over JNI (backed by a value pushed down from
+	// Haxe's BuildConfig.quitsOnBackButton at startup). See
+	// native/platform_android.cpp and Sources/gse/native/NativePlatform.hx
+	// in gs-engine2 for where the real logic lives.
+	override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+		if (keyCode == KeyEvent.KEYCODE_BACK && !GsePlatform.shouldQuitOnBackButton()) {
+			return true
+		}
+		return super.onKeyDown(keyCode, event)
+	}
+
 	private external fun nativeKoreKeyPress(chars: String)
 }
