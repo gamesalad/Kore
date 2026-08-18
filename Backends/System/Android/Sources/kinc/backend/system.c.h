@@ -26,6 +26,15 @@
 void pauseAudio();
 void resumeAudio();
 
+// gs-engine2: defined in native/platform_android.cpp (extern "C" there, so
+// it links against this plain C declaration unmangled). Consults the
+// per-game Back-button quit policy pushed down from BuildConfig at Haxe
+// bootstrap and, if it says true, calls ANativeActivity_finish() followed
+// by _exit(0) — finish() alone closes the Activity/task but leaves the
+// process cached in Android's normal background LRU list, not actually
+// gone, so it isn't enough by itself — see the AKEYCODE_BACK case below.
+void gse_android_maybe_quit_on_back(void);
+
 static struct android_app *app = NULL;
 static ANativeActivity *activity = NULL;
 static ASensorManager *sensorManager = NULL;
@@ -381,6 +390,7 @@ static int32_t input(struct android_app *app, AInputEvent *event) {
 				}
 				else {
 					kinc_internal_keyboard_trigger_key_down(KINC_KEY_BACK);
+					gse_android_maybe_quit_on_back();
 					return 1;
 				}
 			case AKEYCODE_BUTTON_A:
