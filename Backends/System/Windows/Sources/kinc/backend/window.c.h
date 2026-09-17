@@ -26,6 +26,8 @@ typedef struct {
 	void *ppiCallbackData;
 	bool (*closeCallback)(void *data);
 	void *closeCallbackData;
+	WINDOWPLACEMENT placement; // windowed-mode placement saved when leaving KINC_WINDOW_MODE_WINDOW
+	bool has_placement;
 } WindowData;
 
 LRESULT WINAPI KoreWindowsMessageProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -323,15 +325,28 @@ void kinc_window_change_features(int window_index, int features) {
 	kinc_window_show(window_index);
 }
 
+static void kinc_windows_save_placement(WindowData *win) {
+	win->placement.length = sizeof(WINDOWPLACEMENT);
+	win->has_placement = GetWindowPlacement(win->handle, &win->placement) != 0;
+}
+
 void kinc_window_change_mode(int window_index, kinc_window_mode_t mode) {
 	WindowData *win = &windows[window_index];
 	int display_index = kinc_window_display(window_index);
 	kinc_display_mode_t display_mode = kinc_display_current_mode(display_index);
+	if (win->mode == KINC_WINDOW_MODE_WINDOW && mode != KINC_WINDOW_MODE_WINDOW) {
+		kinc_windows_save_placement(win);
+	}
 	switch (mode) {
 	case KINC_WINDOW_MODE_WINDOW:
 		kinc_windows_restore_display(display_index);
 		kinc_window_change_features(window_index, win->features);
 		kinc_window_show(window_index);
+		if (win->has_placement) {
+			// Without this the window keeps the display-sized rect fullscreen gave it.
+			SetWindowPlacement(win->handle, &win->placement);
+			win->has_placement = false;
+		}
 		break;
 	case KINC_WINDOW_MODE_FULLSCREEN: {
 		kinc_windows_restore_display(display_index);
@@ -354,6 +369,18 @@ void kinc_window_change_mode(int window_index, kinc_window_mode_t mode) {
 
 kinc_window_mode_t kinc_window_get_mode(int window_index) {
 	return (kinc_window_mode_t)windows[window_index].mode;
+}
+
+void kinc_window_set_maximized(int window_index, bool maximized) {
+	WindowData *win = &windows[window_index];
+	if (maximized && win->mode != KINC_WINDOW_MODE_WINDOW) {
+		kinc_window_change_mode(window_index, KINC_WINDOW_MODE_WINDOW);
+	}
+	if (win->mode != KINC_WINDOW_MODE_WINDOW) {
+		return;
+	}
+	ShowWindow(win->handle, maximized ? SW_MAXIMIZE : SW_RESTORE);
+	UpdateWindow(win->handle);
 }
 
 void kinc_window_destroy(int window_index) {

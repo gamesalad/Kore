@@ -26,7 +26,11 @@ void kinc_internal_change_framebuffer(int window, struct kinc_framebuffer_option
 
 void kinc_window_change_features(int window, int features) {}
 
-void kinc_window_change_mode(int window, kinc_window_mode_t mode) {}
+void kinc_window_change_window_mode(int window_index, kinc_window_mode_t mode);
+
+void kinc_window_change_mode(int window, kinc_window_mode_t mode) {
+	kinc_window_change_window_mode(window, mode);
+}
 
 void kinc_window_destroy(int window) {}
 
@@ -50,7 +54,7 @@ void kinc_window_set_resize_callback(int window, void (*callback)(int x, int y, 
 void kinc_window_set_ppi_changed_callback(int window, void (*callback)(int ppi, void *data), void *data) {}
 
 kinc_window_mode_t kinc_window_get_mode(int window) {
-	return KINC_WINDOW_MODE_WINDOW;
+	return kinc_macos_window_is_fullscreen(window) ? KINC_WINDOW_MODE_FULLSCREEN : KINC_WINDOW_MODE_WINDOW;
 }
 
 int kinc_window_display(int window) {

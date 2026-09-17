@@ -35,6 +35,8 @@ void kinc_window_change_features(int window, int features) {}
 
 void kinc_window_change_mode(int window, kinc_window_mode_t mode) {}
 
+void kinc_window_set_maximized(int window, bool maximized) {}
+
 void kinc_window_destroy(int window) {}
 
 void kinc_window_show(int window) {}

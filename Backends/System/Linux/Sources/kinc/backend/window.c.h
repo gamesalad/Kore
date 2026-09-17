@@ -63,6 +63,10 @@ void kinc_window_change_mode(int window_index, kinc_window_mode_t mode) {
 	procs.window_change_mode(window_index, mode);
 }
 
+void kinc_window_set_maximized(int window_index, bool maximized) {
+	procs.window_set_maximized(window_index, maximized);
+}
+
 int kinc_window_display(int window_index) {
 	return procs.window_display(window_index);
 }

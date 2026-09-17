@@ -526,6 +526,19 @@ void kinc_wayland_window_change_mode(int window_index, kinc_window_mode_t mode) 
 	}
 }
 
+void kinc_wayland_window_set_maximized(int window_index, bool maximized) {
+	struct kinc_wl_window *window = &wl_ctx.windows[window_index];
+	if (maximized) {
+		if (window->mode != KINC_WINDOW_MODE_WINDOW) {
+			kinc_wayland_window_change_mode(window_index, KINC_WINDOW_MODE_WINDOW);
+		}
+		xdg_toplevel_set_maximized(window->toplevel);
+	}
+	else {
+		xdg_toplevel_unset_maximized(window->toplevel);
+	}
+}
+
 int kinc_wayland_window_display(int window_index) {
 	struct kinc_wl_window *window = &wl_ctx.windows[window_index];
 	return window->display_index;

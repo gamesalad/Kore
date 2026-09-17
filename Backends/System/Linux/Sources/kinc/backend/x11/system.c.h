@@ -167,6 +167,8 @@ bool kinc_x11_init() {
 	    "_NET_WM_ICON_NAME",
 	    "_NET_WM_STATE",
 	    "_NET_WM_STATE_FULLSCREEN",
+	    "_NET_WM_STATE_MAXIMIZED_HORZ",
+	    "_NET_WM_STATE_MAXIMIZED_VERT",
 	    XI_MOUSE,
 	    XI_TABLET,
 	    XI_KEYBOARD,

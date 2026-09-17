@@ -32,6 +32,7 @@ struct linux_procs {
 	void (*window_set_title)(int window_index, const char *title);
 	void (*window_change_mode)(int window_index, kinc_window_mode_t mode);
 	kinc_window_mode_t (*window_get_mode)(int window_index);
+	void (*window_set_maximized)(int window_index, bool maximized);
 	void (*window_move)(int window_index, int x, int y);
 	void (*window_resize)(int window_index, int width, int height);
 	int (*window_x)(int window_index);
