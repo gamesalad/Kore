@@ -53,6 +53,7 @@ void kinc_linux_init_procs() {
 		procs.window_destroy = kinc_wayland_window_destroy;
 		procs.window_change_mode = kinc_wayland_window_change_mode;
 		procs.window_get_mode = kinc_wayland_window_get_mode;
+		procs.window_set_maximized = kinc_wayland_window_set_maximized;
 		procs.window_set_title = kinc_wayland_window_set_title;
 		procs.window_display = kinc_wayland_window_display;
 		procs.window_move = kinc_wayland_window_move;
@@ -105,6 +106,7 @@ void kinc_linux_init_procs() {
 		procs.window_destroy = kinc_x11_window_destroy;
 		procs.window_change_mode = kinc_x11_window_change_mode;
 		procs.window_get_mode = kinc_x11_window_get_mode;
+		procs.window_set_maximized = kinc_x11_window_set_maximized;
 		procs.window_set_title = kinc_x11_window_set_title;
 		procs.window_display = kinc_x11_window_display;
 		procs.window_move = kinc_x11_window_move;

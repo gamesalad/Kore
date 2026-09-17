@@ -196,6 +196,26 @@ void kinc_x11_window_change_mode(int window_index, kinc_window_mode_t mode) {
 	xlib.XFlush(x11_ctx.display);
 }
 
+void kinc_x11_window_set_maximized(int window_index, bool maximized) {
+	struct kinc_x11_window *window = &x11_ctx.windows[window_index];
+	if (maximized && window->mode != KINC_WINDOW_MODE_WINDOW) {
+		kinc_x11_window_change_mode(window_index, KINC_WINDOW_MODE_WINDOW);
+	}
+
+	XEvent xev;
+	memset(&xev, 0, sizeof(xev));
+	xev.type = ClientMessage;
+	xev.xclient.window = window->window;
+	xev.xclient.message_type = x11_ctx.atoms.NET_WM_STATE;
+	xev.xclient.format = 32;
+	xev.xclient.data.l[0] = maximized ? 1 : 0; // _NET_WM_STATE_ADD / _NET_WM_STATE_REMOVE
+	xev.xclient.data.l[1] = x11_ctx.atoms.NET_WM_STATE_MAXIMIZED_HORZ;
+	xev.xclient.data.l[2] = x11_ctx.atoms.NET_WM_STATE_MAXIMIZED_VERT;
+
+	xlib.XSendEvent(x11_ctx.display, DefaultRootWindow(x11_ctx.display), False, SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+	xlib.XFlush(x11_ctx.display);
+}
+
 int kinc_x11_window_display(int window_index) {
 	struct kinc_x11_window *window = &x11_ctx.windows[window_index];
 	return window->display_index;

@@ -18,6 +18,8 @@ void kinc_window_move(int window_index, int x, int y) {}
 
 void kinc_window_change_mode(int window_index, kinc_window_mode_t mode) {}
 
+void kinc_window_set_maximized(int window, bool maximized) {}
+
 void kinc_window_change_features(int window_index, int features) {}
 
 void kinc_internal_change_framebuffer(int window, kinc_framebuffer_options_t *frame);

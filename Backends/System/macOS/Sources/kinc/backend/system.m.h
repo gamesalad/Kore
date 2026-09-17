@@ -135,22 +135,80 @@ int kinc_count_windows(void) {
 	return windowCounter;
 }
 
+// Zoom change waiting for an asynchronous fullscreen exit to finish:
+// 0 = none, 1 = zoom, 2 = unzoom. Applied from windowDidExitFullScreen.
+static int kinc_macos_pending_zoom[10] = {0};
+
+static bool kinc_macos_window_is_fullscreen(int window_index) {
+	// Ask the window rather than trusting the flag: the user can enter or leave
+	// fullscreen through the title-bar button without Kinc seeing it.
+	NSWindow *w = windows[window_index].handle;
+	return w != nil && ([w styleMask] & NSWindowStyleMaskFullScreen) != 0;
+}
+
 void kinc_window_change_window_mode(int window_index, kinc_window_mode_t mode) {
+	NSWindow *w = windows[window_index].handle;
+	if (w == nil) {
+		return;
+	}
+	bool fullscreen = kinc_macos_window_is_fullscreen(window_index);
 	switch (mode) {
 	case KINC_WINDOW_MODE_WINDOW:
-		if (windows[window_index].fullscreen) {
-			[window toggleFullScreen:nil];
+		if (fullscreen) {
+			[w toggleFullScreen:nil];
 			windows[window_index].fullscreen = false;
 		}
 		break;
 	case KINC_WINDOW_MODE_FULLSCREEN:
 	case KINC_WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
-		if (!windows[window_index].fullscreen) {
-			[window toggleFullScreen:nil];
+		kinc_macos_pending_zoom[window_index] = 0;
+		if (!fullscreen) {
+			[w toggleFullScreen:nil];
 			windows[window_index].fullscreen = true;
 		}
 		break;
 	}
+}
+
+// The frame to go back to on unzoom. AppKit's own zoom: bookkeeping does not
+// survive a fullscreen round trip (zoom: on a zoomed window that just left
+// fullscreen "restores" to the zoomed frame), so remember it ourselves.
+static NSRect kinc_macos_unzoomed_frame[10];
+static bool kinc_macos_has_unzoomed_frame[10] = {false};
+
+static void kinc_macos_apply_zoom(int window_index, bool maximized) {
+	NSWindow *w = windows[window_index].handle;
+	// zoom: toggles, so only send it when the state actually has to change.
+	if ([w isZoomed] == maximized) {
+		return;
+	}
+	if (maximized) {
+		kinc_macos_unzoomed_frame[window_index] = [w frame];
+		kinc_macos_has_unzoomed_frame[window_index] = true;
+		[w zoom:nil];
+	}
+	else if (kinc_macos_has_unzoomed_frame[window_index]) {
+		[w setFrame:kinc_macos_unzoomed_frame[window_index] display:YES animate:YES];
+	}
+	else {
+		[w zoom:nil];
+	}
+}
+
+void kinc_window_set_maximized(int window_index, bool maximized) {
+	NSWindow *w = windows[window_index].handle;
+	if (w == nil) {
+		return;
+	}
+	if (kinc_macos_window_is_fullscreen(window_index)) {
+		// toggleFullScreen: animates and only lands later; zooming now
+		// reads the pre-exit frame (and unzoom silently no-ops).
+		kinc_macos_pending_zoom[window_index] = maximized ? 1 : 2;
+		kinc_window_change_window_mode(window_index, KINC_WINDOW_MODE_WINDOW);
+		return;
+	}
+	kinc_macos_pending_zoom[window_index] = 0;
+	kinc_macos_apply_zoom(window_index, maximized);
 }
 
 void kinc_window_set_close_callback(int window, bool (*callback)(void *), void *data) {
@@ -301,6 +359,21 @@ int main(int argc, char **argv) {
 	[view resize:size];
 	if (windows[0].resizeCallback != NULL) {
 		windows[0].resizeCallback(size.width, size.height, windows[0].resizeCallbackData);
+	}
+}
+
+- (void)windowDidExitFullScreen:(NSNotification *)notification {
+	NSWindow *window = [notification object];
+	for (int i = 0; i < windowCounter; ++i) {
+		if (windows[i].handle == window && kinc_macos_pending_zoom[i] != 0) {
+			bool maximized = kinc_macos_pending_zoom[i] == 1;
+			kinc_macos_pending_zoom[i] = 0;
+			int idx = i;
+			// Let the exit transition fully settle before touching the frame.
+			dispatch_async(dispatch_get_main_queue(), ^{
+				kinc_macos_apply_zoom(idx, maximized);
+			});
+		}
 	}
 }
 

@@ -84,6 +84,13 @@ KINC_FUNC void kinc_window_move(int window, int x, int y);
 KINC_FUNC void kinc_window_change_mode(int window, kinc_window_mode_t mode);
 
 /// <summary>
+/// Maximizes or restores a window. A maximized window keeps its decorations and
+/// fills the display's work area; passing true on a fullscreen window leaves
+/// fullscreen first. No-op on platforms without a window manager (mobile, web).
+/// </summary>
+KINC_FUNC void kinc_window_set_maximized(int window, bool maximized);
+
+/// <summary>
 /// Applies an or-ed combination of KINC_WINDOW_FEATURE values.
 /// </summary>
 KINC_FUNC void kinc_window_change_features(int window, int features);
