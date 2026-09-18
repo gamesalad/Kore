@@ -202,6 +202,14 @@ static bool last_hat_right = false;
 static bool last_hat_up = false;
 static bool last_hat_down = false;
 
+static kinc_android_key_hook_t android_key_hook = NULL;
+static void *android_key_hook_data = NULL;
+
+void kinc_android_set_key_hook(kinc_android_key_hook_t hook, void *userdata) {
+	android_key_hook = hook;
+	android_key_hook_data = userdata;
+}
+
 static int32_t input(struct android_app *app, AInputEvent *event) {
 	if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
 		int source = AInputEvent_getSource(event);
@@ -283,6 +291,14 @@ static int32_t input(struct android_app *app, AInputEvent *event) {
 	}
 	else if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
 		int32_t code = AKeyEvent_getKeyCode(event);
+
+		if (android_key_hook != NULL) {
+			int32_t action = AKeyEvent_getAction(event);
+			if ((action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_UP) &&
+			    android_key_hook(code, action == AKEY_EVENT_ACTION_DOWN, android_key_hook_data)) {
+				return 1;
+			}
+		}
 
 		if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN) {
 			int shift = AKeyEvent_getMetaState(event) & AMETA_SHIFT_ON;
