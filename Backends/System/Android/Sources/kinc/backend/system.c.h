@@ -538,7 +538,9 @@ static int32_t input(struct android_app *app, AInputEvent *event) {
 				kinc_internal_gamepad_trigger_button(0, 11, 1);
 				return 1;
 			case AKEYCODE_MEDIA_PLAY_PAUSE:
-				kinc_internal_gamepad_trigger_button(0, 12, 1);
+				// Index 17: 12 is the D-pad-up slot (see AKEYCODE_DPAD_UP above), so a
+				// remote's play/pause read as "up". 16 is BUTTON_MODE. 17 is unused.
+				kinc_internal_gamepad_trigger_button(0, 17, 1);
 				return 1;
 			// (DK) /Amazon FireTV remote/controller mappings
 			default:
@@ -769,7 +771,9 @@ static int32_t input(struct android_app *app, AInputEvent *event) {
 				kinc_internal_gamepad_trigger_button(0, 11, 0);
 				return 1;
 			case AKEYCODE_MEDIA_PLAY_PAUSE:
-				kinc_internal_gamepad_trigger_button(0, 12, 0);
+				// Index 17: 12 is the D-pad-up slot (see AKEYCODE_DPAD_UP above), so a
+				// remote's play/pause read as "up". 16 is BUTTON_MODE. 17 is unused.
+				kinc_internal_gamepad_trigger_button(0, 17, 0);
 				return 1;
 			// (DK) /Amazon FireTV remote/controller mappings
 			default:
