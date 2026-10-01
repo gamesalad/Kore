@@ -91,6 +91,14 @@ KINC_FUNC void kinc_window_change_mode(int window, kinc_window_mode_t mode);
 KINC_FUNC void kinc_window_set_maximized(int window, bool maximized);
 
 /// <summary>
+/// Enables or disables the platform's windowed/fullscreen toggle hotkey (on by
+/// default): Alt+Enter on Windows, Ctrl+Cmd+F (View > Enter Full Screen) on
+/// macOS. Only the hotkey is affected; kinc_window_change_mode keeps working.
+/// No-op where there is no such hotkey (mobile, web; Linux for now).
+/// </summary>
+KINC_FUNC void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled);
+
+/// <summary>
 /// Applies an or-ed combination of KINC_WINDOW_FEATURE values.
 /// </summary>
 KINC_FUNC void kinc_window_change_features(int window, int features);

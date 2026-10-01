@@ -299,6 +299,12 @@ static wchar_t toUnicode(WPARAM wParam, LPARAM lParam) {
 #define HANDLE_ALT_ENTER
 #endif
 
+static bool fullscreen_toggle_hotkey_enabled = true;
+
+void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled) {
+	fullscreen_toggle_hotkey_enabled = enabled;
+}
+
 static bool cursors_initialized = false;
 static int cursor = 0;
 #define NUM_CURSORS 14
@@ -617,7 +623,7 @@ LRESULT WINAPI KoreWindowsMessageProcedure(HWND hWnd, UINT msg, WPARAM wParam, L
 				}
 
 #ifdef HANDLE_ALT_ENTER
-				if (altDown && keyTranslated[wParam] == KINC_KEY_RETURN) {
+				if (altDown && keyTranslated[wParam] == KINC_KEY_RETURN && fullscreen_toggle_hotkey_enabled) {
 					// kinc_window_change_mode saves the window placement on the way
 					// into fullscreen and restores it on the way out, so there is no
 					// size/position to re-apply here (re-applying the outer rect via

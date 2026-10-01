@@ -216,6 +216,22 @@ void kinc_window_set_close_callback(int window, bool (*callback)(void *), void *
 	windows[window].closeCallbackData = data;
 }
 
+// View > Enter Full Screen, the standard Ctrl+Cmd+F toggle. AppKit retitles
+// it Enter/Exit itself and won't auto-insert a duplicate, since an item with
+// toggleFullScreen: already exists.
+static NSMenuItem *fullScreenMenuItem = nil;
+static bool fullscreen_toggle_hotkey_enabled = true;
+
+void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled) {
+	fullscreen_toggle_hotkey_enabled = enabled;
+	// A hidden item takes no part in key-equivalent matching, so this removes
+	// the hotkey without touching the window's fullscreen capability, which
+	// kinc_window_change_mode needs.
+	if (fullScreenMenuItem != nil) {
+		[fullScreenMenuItem setHidden:!enabled];
+	}
+}
+
 static void addMenubar(void) {
 	NSString *appName = [[NSProcessInfo processInfo] processName];
 
@@ -227,8 +243,18 @@ static void addMenubar(void) {
 	NSMenuItem *appMenuItem = [NSMenuItem new];
 	[appMenuItem setSubmenu:appMenu];
 
+	NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+	fullScreenMenuItem = [[NSMenuItem alloc] initWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
+	[fullScreenMenuItem setKeyEquivalentModifierMask:NSEventModifierFlagControl | NSEventModifierFlagCommand];
+	[fullScreenMenuItem setHidden:!fullscreen_toggle_hotkey_enabled];
+	[viewMenu addItem:fullScreenMenuItem];
+
+	NSMenuItem *viewMenuItem = [NSMenuItem new];
+	[viewMenuItem setSubmenu:viewMenu];
+
 	NSMenu *menubar = [NSMenu new];
 	[menubar addItem:appMenuItem];
+	[menubar addItem:viewMenuItem];
 	[NSApp setMainMenu:menubar];
 }
 
