@@ -243,6 +243,10 @@ static void addMenubar(void) {
 	NSMenuItem *appMenuItem = [NSMenuItem new];
 	[appMenuItem setSubmenu:appMenu];
 
+	// Otherwise AppKit adds Show Tab Bar / Show All Tabs to the View menu
+	// (window tabbing, meaningless for a single game window).
+	[NSWindow setAllowsAutomaticWindowTabbing:NO];
+
 	NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
 	fullScreenMenuItem = [[NSMenuItem alloc] initWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[fullScreenMenuItem setKeyEquivalentModifierMask:NSEventModifierFlagControl | NSEventModifierFlagCommand];
