@@ -219,16 +219,35 @@ void kinc_window_set_close_callback(int window, bool (*callback)(void *), void *
 // View > Enter Full Screen, the standard Ctrl+Cmd+F toggle. AppKit retitles
 // it Enter/Exit itself and won't auto-insert a duplicate, since an item with
 // toggleFullScreen: already exists.
-static NSMenuItem *fullScreenMenuItem = nil;
+static NSMenuItem *viewMenuItem = nil;
 static bool fullscreen_toggle_hotkey_enabled = true;
+static id fullscreenHotkeyMonitor = nil;
+
+static bool isFullscreenHotkey(NSEvent *event) {
+	NSEventModifierFlags flags = [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
+	NSEventModifierFlags wanted = NSEventModifierFlagControl | NSEventModifierFlagCommand;
+	return (flags & (wanted | NSEventModifierFlagOption | NSEventModifierFlagShift)) == wanted &&
+	       [[event charactersIgnoringModifiers] caseInsensitiveCompare:@"f"] == NSOrderedSame;
+}
 
 void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled) {
 	fullscreen_toggle_hotkey_enabled = enabled;
-	// A hidden item takes no part in key-equivalent matching, so this removes
-	// the hotkey without touching the window's fullscreen capability, which
-	// kinc_window_change_mode needs.
-	if (fullScreenMenuItem != nil) {
-		[fullScreenMenuItem setHidden:!enabled];
+	if (viewMenuItem != nil) {
+		[viewMenuItem setHidden:!enabled];
+	}
+	// Hiding the menu item is not enough: AppKit still toggles a
+	// fullscreen-capable window on Ctrl+Cmd+F by itself. A local monitor sees
+	// the key before menu / key-equivalent dispatch and swallows it. The
+	// window stays fullscreen-capable, which kinc_window_change_mode needs.
+	if (!enabled && fullscreenHotkeyMonitor == nil) {
+		fullscreenHotkeyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+		                                                                handler:^NSEvent *(NSEvent *event) {
+			                                                                return isFullscreenHotkey(event) ? nil : event;
+		                                                                }];
+	}
+	else if (enabled && fullscreenHotkeyMonitor != nil) {
+		[NSEvent removeMonitor:fullscreenHotkeyMonitor];
+		fullscreenHotkeyMonitor = nil;
 	}
 }
 
@@ -248,13 +267,13 @@ static void addMenubar(void) {
 	[NSWindow setAllowsAutomaticWindowTabbing:NO];
 
 	NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
-	fullScreenMenuItem = [[NSMenuItem alloc] initWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
+	NSMenuItem *fullScreenMenuItem = [[NSMenuItem alloc] initWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[fullScreenMenuItem setKeyEquivalentModifierMask:NSEventModifierFlagControl | NSEventModifierFlagCommand];
-	[fullScreenMenuItem setHidden:!fullscreen_toggle_hotkey_enabled];
 	[viewMenu addItem:fullScreenMenuItem];
 
-	NSMenuItem *viewMenuItem = [NSMenuItem new];
+	viewMenuItem = [NSMenuItem new];
 	[viewMenuItem setSubmenu:viewMenu];
+	[viewMenuItem setHidden:!fullscreen_toggle_hotkey_enabled];
 
 	NSMenu *menubar = [NSMenu new];
 	[menubar addItem:appMenuItem];
