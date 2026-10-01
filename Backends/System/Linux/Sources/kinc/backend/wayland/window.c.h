@@ -3,6 +3,7 @@
 #include <kinc/image.h>
 #include <kinc/window.h>
 #include <kinc/log.h>
+#include <kinc/system.h>
 
 // for all that shared memory stuff later on
 #include <errno.h>
@@ -411,7 +412,8 @@ int kinc_wayland_window_create(kinc_window_options_t *win, kinc_framebuffer_opti
 		window->decorations.server_side = false;
 	}
 
-	xdg_toplevel_set_app_id(window->toplevel, KINC_WAYLAND_APP_ID);
+	const char *appId = kinc_application_id();
+	xdg_toplevel_set_app_id(window->toplevel, appId[0] != 0 ? appId : KINC_WAYLAND_APP_ID);
 
 	wl_surface_commit(window->surface);
 	wl_ctx.num_windows++;

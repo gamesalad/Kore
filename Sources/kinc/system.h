@@ -40,6 +40,21 @@ KINC_FUNC const char *kinc_application_name(void);
 KINC_FUNC void kinc_set_application_name(const char *name);
 
 /// <summary>
+/// Returns the application id as set by kinc_set_application_id, or an empty string if none was set.
+/// </summary>
+/// <returns>The current application id</returns>
+KINC_FUNC const char *kinc_application_id(void);
+
+/// <summary>
+/// Sets a desktop application id (for example a reverse-DNS id like "com.example.game") that the
+/// window system uses to identify the application's windows. On Linux this becomes the X11 WM_CLASS
+/// and the Wayland app_id, so desktop environments can match windows to their .desktop entry.
+/// Has to be called before the window is created. Without it the previous name-derived values are used.
+/// </summary>
+/// <param name="id">The new application id</param>
+KINC_FUNC void kinc_set_application_id(const char *id);
+
+/// <summary>
 /// Returns the current width of the initial application-window which is equivalent to calling kinc_window_width(0).
 /// </summary>
 /// <returns>The width of the initial window</returns>
@@ -563,6 +578,17 @@ const char *kinc_application_name(void) {
 
 void kinc_set_application_name(const char *name) {
 	strcpy(application_name, name);
+}
+
+static char application_id[256] = {0};
+
+const char *kinc_application_id(void) {
+	return application_id;
+}
+
+void kinc_set_application_id(const char *id) {
+	strncpy(application_id, id, sizeof(application_id) - 1);
+	application_id[sizeof(application_id) - 1] = 0;
 }
 
 void kinc_stop(void) {
