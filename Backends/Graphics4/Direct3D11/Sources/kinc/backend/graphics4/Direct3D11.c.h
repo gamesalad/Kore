@@ -291,6 +291,12 @@ void kinc_g4_internal_init_window(int windowId, int depthBufferBits, int stencil
 	swapChainDesc.Windowed = true;
 
 	kinc_microsoft_affirm(dx_ctx.dxgiFactory->lpVtbl->CreateSwapChain(dx_ctx.dxgiFactory, (IUnknown *)dx_ctx.dxgiDevice, &swapChainDesc, &window->swapChain));
+#ifdef KINC_WINDOWS
+	// Alt+Enter is handled by the Windows message loop (HANDLE_ALT_ENTER in
+	// system.c.h). Must come after CreateSwapChain, which (re)associates the
+	// window with this factory.
+	dx_ctx.dxgiFactory->lpVtbl->MakeWindowAssociation(dx_ctx.dxgiFactory, window->hwnd, DXGI_MWA_NO_ALT_ENTER);
+#endif
 
 	createBackbuffer(window, kinc_g4_antialiasing_samples());
 	currentRenderTargetViews[0] = window->renderTargetView;
