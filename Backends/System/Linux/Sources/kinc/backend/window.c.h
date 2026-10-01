@@ -63,6 +63,10 @@ void kinc_window_change_mode(int window_index, kinc_window_mode_t mode) {
 	procs.window_change_mode(window_index, mode);
 }
 
+// Not implemented yet: neither the X11 nor the Wayland backend has a toggle
+// hotkey to switch off.
+void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled) {}
+
 void kinc_window_set_maximized(int window_index, bool maximized) {
 	procs.window_set_maximized(window_index, maximized);
 }

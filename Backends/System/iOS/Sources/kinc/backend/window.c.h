@@ -37,6 +37,8 @@ void kinc_window_change_mode(int window, kinc_window_mode_t mode) {}
 
 void kinc_window_set_maximized(int window, bool maximized) {}
 
+void kinc_window_set_fullscreen_toggle_hotkey_enabled(bool enabled) {}
+
 void kinc_window_destroy(int window) {}
 
 void kinc_window_show(int window) {}
