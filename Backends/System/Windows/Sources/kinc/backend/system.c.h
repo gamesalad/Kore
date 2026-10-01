@@ -290,7 +290,12 @@ static wchar_t toUnicode(WPARAM wParam, LPARAM lParam) {
 	return buffer[0];
 }
 
-#if !defined(KINC_DIRECT3D9) && !defined(KINC_DIRECT3D11) && !defined(KINC_DIRECT3D12)
+// Direct3D 11 is included: its swap chain is always windowed and Kinc's
+// fullscreen is a borderless window, so DXGI's built-in Alt+Enter (which only
+// toggles the swap chain's exclusive-fullscreen state) can never restore the
+// window. Direct3D11.c.h opts out of DXGI's handling with
+// DXGI_MWA_NO_ALT_ENTER so the two don't fight.
+#if !defined(KINC_DIRECT3D9) && !defined(KINC_DIRECT3D12)
 #define HANDLE_ALT_ENTER
 #endif
 
@@ -315,10 +320,6 @@ LRESULT WINAPI KoreWindowsMessageProcedure(HWND hWnd, UINT msg, WPARAM wParam, L
 #ifdef HANDLE_ALT_ENTER
 	static bool altDown = false;
 #endif
-	static int last_window_width = -1;
-	static int last_window_height = -1;
-	static int last_window_x = INT_MIN;
-	static int last_window_y = INT_MIN;
 
 	switch (msg) {
 	case WM_NCCREATE:
@@ -617,22 +618,11 @@ LRESULT WINAPI KoreWindowsMessageProcedure(HWND hWnd, UINT msg, WPARAM wParam, L
 
 #ifdef HANDLE_ALT_ENTER
 				if (altDown && keyTranslated[wParam] == KINC_KEY_RETURN) {
-					if (kinc_window_get_mode(0) == KINC_WINDOW_MODE_WINDOW) {
-						last_window_width = kinc_window_width(0);
-						last_window_height = kinc_window_height(0);
-						last_window_x = kinc_window_x(0);
-						last_window_y = kinc_window_y(0);
-						kinc_window_change_mode(0, KINC_WINDOW_MODE_FULLSCREEN);
-					}
-					else {
-						kinc_window_change_mode(0, KINC_WINDOW_MODE_WINDOW);
-						if (last_window_width > 0 && last_window_height > 0) {
-							kinc_window_resize(0, last_window_width, last_window_height);
-						}
-						if (last_window_x > INT_MIN && last_window_y > INT_MIN) {
-							kinc_window_move(0, last_window_x, last_window_y);
-						}
-					}
+					// kinc_window_change_mode saves the window placement on the way
+					// into fullscreen and restores it on the way out, so there is no
+					// size/position to re-apply here (re-applying the outer rect via
+					// kinc_window_move offset the window by its frame each toggle).
+					kinc_window_change_mode(0, kinc_window_get_mode(0) == KINC_WINDOW_MODE_WINDOW ? KINC_WINDOW_MODE_FULLSCREEN : KINC_WINDOW_MODE_WINDOW);
 				}
 #endif
 			}
