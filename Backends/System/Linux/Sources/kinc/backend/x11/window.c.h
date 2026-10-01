@@ -1,6 +1,7 @@
 #include "x11.h"
 
 #include <stdlib.h>
+#include <kinc/system.h>
 
 struct MwmHints {
 	// These correspond to XmRInt resources. (VendorSE.c)
@@ -48,11 +49,22 @@ int kinc_x11_window_create(kinc_window_options_t *win, kinc_framebuffer_options_
 	                                    InputOutput, visual, CWBorderPixel | CWColormap | CWEventMask, &set_window_attribs);
 
 	static char nameClass[256];
-	static const char *nameClassAddendum = "_KincApplication";
-	strncpy(nameClass, kinc_application_name(), sizeof(nameClass) - strlen(nameClassAddendum) - 1);
-	strcat(nameClass, nameClassAddendum);
 	char resNameBuffer[256];
-	strncpy(resNameBuffer, kinc_application_name(), 256);
+	const char *appId = kinc_application_id();
+	if (appId[0] != 0) {
+		// Desktop environments match WM_CLASS against the .desktop entry's
+		// StartupWMClass / file name, so both fields carry the app id.
+		strncpy(nameClass, appId, sizeof(nameClass) - 1);
+		nameClass[sizeof(nameClass) - 1] = 0;
+		strncpy(resNameBuffer, appId, sizeof(resNameBuffer) - 1);
+		resNameBuffer[sizeof(resNameBuffer) - 1] = 0;
+	}
+	else {
+		static const char *nameClassAddendum = "_KincApplication";
+		strncpy(nameClass, kinc_application_name(), sizeof(nameClass) - strlen(nameClassAddendum) - 1);
+		strcat(nameClass, nameClassAddendum);
+		strncpy(resNameBuffer, kinc_application_name(), 256);
+	}
 	XClassHint classHint = {.res_name = resNameBuffer, .res_class = nameClass};
 	xlib.XSetClassHint(x11_ctx.display, window->window, &classHint);
 
