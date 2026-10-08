@@ -1,4 +1,5 @@
 #include <kinc/audio2/audio.h>
+#include <kinc/audio2/default_device.c.h>
 #include <kinc/system.h>
 
 #include <kinc/backend/SystemMicrosoft.h>

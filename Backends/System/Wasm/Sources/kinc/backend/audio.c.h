@@ -1,4 +1,5 @@
 #include <kinc/audio2/audio.h>
+#include <kinc/audio2/default_device.c.h>
 #include <stdlib.h>
 
 static kinc_a2_buffer_t a2_buffer;

@@ -58,9 +58,54 @@ KINC_FUNC void kinc_a2_update(void);
 /// </summary>
 KINC_FUNC void kinc_a2_shutdown(void);
 
+/// <summary>
+/// The device index that means "follow the system's default output device", which is also the initial state.
+/// </summary>
+#define KINC_A2_DEFAULT_DEVICE -1
+
+/// <summary>
+/// Refreshes the list of available audio output devices and returns its length. kinc_a2_device_name, kinc_a2_select_device and kinc_a2_selected_device
+/// index into the list made by the most recent call. Systems without device selection report a single device named "Default".
+/// </summary>
+/// <returns>The number of output devices</returns>
+KINC_FUNC int kinc_a2_device_count(void);
+
+/// <summary>
+/// The name of an output device in the list made by the last kinc_a2_device_count call, UTF-8. The string stays valid until the next kinc_a2_device_count
+/// call.
+/// </summary>
+/// <param name="index">The device index</param>
+/// <returns>The name or NULL when the index is out of range</returns>
+KINC_FUNC const char *kinc_a2_device_name(int index);
+
+/// <summary>
+/// Plays audio on a device from the list made by the last kinc_a2_device_count call, or follows the system's default output device when index is
+/// KINC_A2_DEFAULT_DEVICE. The switch happens asynchronously. When the selected device disappears or can not be opened, output falls back to following the
+/// system default and the device-changed callback is called. A no-op on systems without device selection.
+/// </summary>
+/// <param name="index">The device index or KINC_A2_DEFAULT_DEVICE</param>
+/// <returns>Whether the index was valid</returns>
+KINC_FUNC bool kinc_a2_select_device(int index);
+
+/// <summary>
+/// The selected device's index in the list made by the last kinc_a2_device_count call, or KINC_A2_DEFAULT_DEVICE when following the system default (or
+/// when the selected device is not in that list).
+/// </summary>
+KINC_FUNC int kinc_a2_selected_device(void);
+
+/// <summary>
+/// Sets a callback that's called after audio output moved to a different device - because the system default changed while following it, because the
+/// selected device disappeared, or after kinc_a2_select_device. It can be called from any thread. A sample-rate change that comes with the device change
+/// is reported through the sample-rate callback as well.
+/// </summary>
+/// <param name="kinc_a2_device_changed_callback">The callback to set</param>
+/// <param name="userdata">The user data provided to the callback</param>
+KINC_FUNC void kinc_a2_set_device_changed_callback(void (*kinc_a2_device_changed_callback)(void *userdata), void *userdata);
+
 void kinc_a2_internal_init(void);
 bool kinc_a2_internal_callback(kinc_a2_buffer_t *buffer, int samples);
 void kinc_a2_internal_sample_rate_callback(void);
+void kinc_a2_internal_device_changed_callback(void);
 
 #ifdef KINC_IMPLEMENTATION_AUDIO2
 #define KINC_IMPLEMENTATION
@@ -94,6 +139,16 @@ void kinc_a2_set_sample_rate_callback(void (*kinc_a2_sample_rate_callback)(void 
 	kinc_mutex_unlock(&mutex);
 }
 
+static void (*a2_device_changed_callback)(void *userdata) = NULL;
+static void *a2_device_changed_userdata = NULL;
+
+void kinc_a2_set_device_changed_callback(void (*kinc_a2_device_changed_callback)(void *userdata), void *userdata) {
+	kinc_mutex_lock(&mutex);
+	a2_device_changed_callback = kinc_a2_device_changed_callback;
+	a2_device_changed_userdata = userdata;
+	kinc_mutex_unlock(&mutex);
+}
+
 void kinc_a2_internal_init(void) {
 	kinc_mutex_init(&mutex);
 }
@@ -112,6 +167,14 @@ void kinc_a2_internal_sample_rate_callback(void) {
 	kinc_mutex_lock(&mutex);
 	if (a2_sample_rate_callback != NULL) {
 		a2_sample_rate_callback(a2_sample_rate_userdata);
+	}
+	kinc_mutex_unlock(&mutex);
+}
+
+void kinc_a2_internal_device_changed_callback(void) {
+	kinc_mutex_lock(&mutex);
+	if (a2_device_changed_callback != NULL) {
+		a2_device_changed_callback(a2_device_changed_userdata);
 	}
 	kinc_mutex_unlock(&mutex);
 }

@@ -1,4 +1,5 @@
 #include <kinc/audio2/audio.h>
+#include <kinc/audio2/default_device.c.h>
 
 #include <alsa/asoundlib.h>
 #include <errno.h>
