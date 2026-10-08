@@ -311,9 +311,20 @@ static bool start_device(AudioDeviceID new_device) {
 	return true;
 }
 
+// device_queue only. Drops the selection when it is still uid.
+static void drop_selection(CFStringRef uid) {
+	kinc_mutex_lock(&device_mutex);
+	if (selected_uid != NULL && CFStringCompare(selected_uid, uid, 0) == kCFCompareEqualTo) {
+		CFRelease(selected_uid);
+		selected_uid = NULL;
+	}
+	kinc_mutex_unlock(&device_mutex);
+}
+
 // device_queue only. Moves output to the device it should be on now: the selected one, or the system default when nothing is selected or the selected
-// device is gone (which also drops the selection). Nothing happens when output is already there. The device-changed callback fires when the device in
-// use changed (a device that failed to open is not in use, so retrying it on every notification reports nothing) or the selection was dropped.
+// device is gone or can not be opened (both drop the selection). Nothing happens when output is already there. The device-changed callback fires when
+// the device in use changed (a device that failed to open is not in use, so retrying it on every notification reports nothing) or the selection was
+// dropped.
 static void rebind_device(void) {
 	kinc_mutex_lock(&device_mutex);
 	CFStringRef uid = selected_uid != NULL ? (CFStringRef)CFRetain(selected_uid) : NULL;
@@ -326,20 +337,18 @@ static void rebind_device(void) {
 		if (target == kAudioDeviceUnknown) {
 			fell_back = true;
 			kinc_log(KINC_LOG_LEVEL_WARNING, "The selected audio output device is gone, following the system default.");
-			kinc_mutex_lock(&device_mutex);
-			if (selected_uid != NULL && CFStringCompare(selected_uid, uid, 0) == kCFCompareEqualTo) {
-				CFRelease(selected_uid);
-				selected_uid = NULL;
-			}
-			kinc_mutex_unlock(&device_mutex);
+			drop_selection(uid);
 		}
-		CFRelease(uid);
 	}
+	bool selected = target != kAudioDeviceUnknown;
 	if (target == kAudioDeviceUnknown) {
 		target = default_output_device();
 	}
 
 	if (target == device && soundPlaying) {
+		if (uid != NULL) {
+			CFRelease(uid);
+		}
 		if (fell_back) {
 			kinc_a2_internal_device_changed_callback();
 		}
@@ -348,7 +357,18 @@ static void rebind_device(void) {
 
 	AudioDeviceID previous = device_in_use();
 	stop_device();
-	start_device(target);
+	if (!start_device(target) && selected) {
+		fell_back = true;
+		kinc_log(KINC_LOG_LEVEL_WARNING, "The selected audio output device can not be opened, following the system default.");
+		drop_selection(uid);
+		AudioDeviceID fallback = default_output_device();
+		if (fallback != target) {
+			start_device(fallback);
+		}
+	}
+	if (uid != NULL) {
+		CFRelease(uid);
+	}
 	if (device_in_use() != previous || fell_back) {
 		kinc_a2_internal_device_changed_callback();
 	}

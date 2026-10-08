@@ -164,10 +164,29 @@ static void releaseDevice(void) {
 	format = NULL;
 }
 
-// The selected device when it is still active, otherwise the default render device. *fell_back is set when a selected device could not be used, which
-// also drops the selection.
-static IMMDevice *findDevice(bool *fell_back) {
+// Drops the selection when it is still id.
+static void dropSelection(const wchar_t *id) {
+	kinc_mutex_lock(&device_mutex);
+	if (selected_id != NULL && id != NULL && wcscmp(selected_id, id) == 0) {
+		free(selected_id);
+		selected_id = NULL;
+	}
+	kinc_mutex_unlock(&device_mutex);
+}
+
+static IMMDevice *defaultDevice(void) {
+	IMMDevice *found = NULL;
+	if (deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(deviceEnumerator, eRender, eConsole, &found) != S_OK) {
+		found = NULL;
+	}
+	return found;
+}
+
+// The selected device when it is still active (*selected is set), otherwise the default render device. *fell_back is set when a selected device could
+// not be used, which also drops the selection.
+static IMMDevice *findDevice(bool *fell_back, bool *selected) {
 	*fell_back = false;
+	*selected = false;
 
 	kinc_mutex_lock(&device_mutex);
 	wchar_t *wanted = copy_wstring(selected_id);
@@ -184,20 +203,16 @@ static IMMDevice *findDevice(bool *fell_back) {
 			}
 			*fell_back = true;
 			kinc_log(KINC_LOG_LEVEL_WARNING, "The selected audio output device is gone, following the system default.");
-			kinc_mutex_lock(&device_mutex);
-			if (selected_id != NULL && wcscmp(selected_id, wanted) == 0) {
-				free(selected_id);
-				selected_id = NULL;
-			}
-			kinc_mutex_unlock(&device_mutex);
+			dropSelection(wanted);
+		}
+		else {
+			*selected = true;
 		}
 		free(wanted);
 	}
 
 	if (found == NULL) {
-		if (deviceEnumerator->lpVtbl->GetDefaultAudioEndpoint(deviceEnumerator, eRender, eConsole, &found) != S_OK) {
-			found = NULL;
-		}
+		found = defaultDevice();
 	}
 	return found;
 }
@@ -312,7 +327,8 @@ static bool sameId(const wchar_t *a, const wchar_t *b) {
 // report nothing) or the selection was dropped.
 static void reinitAudio(bool force) {
 	bool fell_back = false;
-	IMMDevice *target = findDevice(&fell_back);
+	bool selected = false;
+	IMMDevice *target = findDevice(&fell_back, &selected);
 	wchar_t *target_id = deviceId(target);
 
 	if (!force && audioClient != NULL && target_id != NULL && current_id != NULL && wcscmp(target_id, current_id) == 0) {
@@ -333,6 +349,27 @@ static void reinitAudio(bool force) {
 	if (initDevice(target)) {
 		submitEmptyBuffer(bufferFrames);
 		audioClient->lpVtbl->Start(audioClient);
+	}
+	else if (selected) {
+		fell_back = true;
+		kinc_log(KINC_LOG_LEVEL_WARNING, "The selected audio output device can not be opened, following the system default.");
+		dropSelection(current_id);
+		IMMDevice *fallback = defaultDevice();
+		wchar_t *fallback_id = deviceId(fallback);
+		if (fallback != NULL && !sameId(fallback_id, current_id)) {
+			free(current_id);
+			current_id = fallback_id;
+			if (initDevice(fallback)) {
+				submitEmptyBuffer(bufferFrames);
+				audioClient->lpVtbl->Start(audioClient);
+			}
+		}
+		else {
+			if (fallback != NULL) {
+				fallback->lpVtbl->Release(fallback);
+			}
+			free(fallback_id);
+		}
 	}
 
 	bool changed = fell_back || !sameId(previous_id, audioClient != NULL ? current_id : NULL);
@@ -519,7 +556,8 @@ void kinc_a2_init() {
 
 	// The first device opens here, before the audio thread exists - no kinc_a2 callback can be set yet.
 	bool fell_back = false;
-	IMMDevice *first = findDevice(&fell_back);
+	bool selected = false;
+	IMMDevice *first = findDevice(&fell_back, &selected);
 	current_id = deviceId(first);
 	initDevice(first);
 	// The thread runs even without a device, to pick one up when it appears.
