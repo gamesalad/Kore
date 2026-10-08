@@ -303,7 +303,13 @@ static void submitEmptyBuffer(unsigned frames) {
 	result = renderClient->lpVtbl->ReleaseBuffer(renderClient, frames, 0);
 }
 
+static bool sameId(const wchar_t *a, const wchar_t *b) {
+	return a == NULL ? b == NULL : (b != NULL && wcscmp(a, b) == 0);
+}
+
 // Audio thread only. Moves output to the device it should be on now; with force it reopens even the same device (after AUDCLNT_E_DEVICE_INVALIDATED).
+// The device-changed callback fires when the device in use changed (one that failed to open is not in use, so the retries while there is no device
+// report nothing) or the selection was dropped.
 static void reinitAudio(bool force) {
 	bool fell_back = false;
 	IMMDevice *target = findDevice(&fell_back);
@@ -320,7 +326,7 @@ static void reinitAudio(bool force) {
 		return;
 	}
 
-	bool changed = fell_back || current_id == NULL || target_id == NULL || wcscmp(target_id, current_id) != 0;
+	wchar_t *previous_id = audioClient != NULL ? copy_wstring(current_id) : NULL;
 	free(current_id);
 	current_id = target_id;
 
@@ -329,6 +335,8 @@ static void reinitAudio(bool force) {
 		audioClient->lpVtbl->Start(audioClient);
 	}
 
+	bool changed = fell_back || !sameId(previous_id, audioClient != NULL ? current_id : NULL);
+	free(previous_id);
 	if (changed) {
 		kinc_a2_internal_device_changed_callback();
 	}

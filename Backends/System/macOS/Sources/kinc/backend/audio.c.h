@@ -231,6 +231,11 @@ static AudioDeviceID default_output_device(void) {
 	return id;
 }
 
+// device_queue only. The device output is playing on, kAudioDeviceUnknown while silent.
+static AudioDeviceID device_in_use(void) {
+	return soundPlaying ? device : kAudioDeviceUnknown;
+}
+
 // device_queue only.
 static void stop_device(void) {
 	if (soundPlaying) {
@@ -307,7 +312,8 @@ static bool start_device(AudioDeviceID new_device) {
 }
 
 // device_queue only. Moves output to the device it should be on now: the selected one, or the system default when nothing is selected or the selected
-// device is gone (which also drops the selection). Nothing happens when output is already there.
+// device is gone (which also drops the selection). Nothing happens when output is already there. The device-changed callback fires when the device in
+// use changed (a device that failed to open is not in use, so retrying it on every notification reports nothing) or the selection was dropped.
 static void rebind_device(void) {
 	kinc_mutex_lock(&device_mutex);
 	CFStringRef uid = selected_uid != NULL ? (CFStringRef)CFRetain(selected_uid) : NULL;
@@ -340,10 +346,10 @@ static void rebind_device(void) {
 		return;
 	}
 
-	AudioDeviceID previous = device;
+	AudioDeviceID previous = device_in_use();
 	stop_device();
 	start_device(target);
-	if (previous != kAudioDeviceUnknown || fell_back) {
+	if (device_in_use() != previous || fell_back) {
 		kinc_a2_internal_device_changed_callback();
 	}
 }
