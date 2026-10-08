@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 
 #include <kinc/audio2/audio.h>
+#include <kinc/audio2/default_device.c.h>
 #include <kinc/backend/video.h>
 #include <kinc/math/core.h>
 
