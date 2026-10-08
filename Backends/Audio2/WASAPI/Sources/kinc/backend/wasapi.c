@@ -55,6 +55,9 @@
 
 #include <AudioClient.h>
 #include <mmdeviceapi.h>
+#include <mmreg.h>
+
+#include <kinc/backend/wasapi_samples.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +78,9 @@ DEFINE_GUID(CLSID_MMDeviceEnumerator, 0xBCDE0395, 0xE52F, 0x467C, 0x8E, 0x3D, 0x
 DEFINE_GUID(kinc_IID_IMMNotificationClient, 0x7991EEC9, 0x7E89, 0x4D85, 0x83, 0x90, 0x6C, 0x70, 0x3C, 0xEC, 0x60, 0xC0);
 // 00000000-0000-0000-C000-000000000046
 DEFINE_GUID(kinc_IID_IUnknown, 0x00000000, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+// KSDATAFORMAT_SUBTYPE_PCM and KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, the SubFormat of a WAVE_FORMAT_EXTENSIBLE format
+DEFINE_GUID(kinc_KSDATAFORMAT_SUBTYPE_PCM, 0x00000001, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+DEFINE_GUID(kinc_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, 0x00000003, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
 // PKEY_Device_FriendlyName
 static const PROPERTYKEY kinc_PKEY_Device_FriendlyName = {{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 
@@ -90,6 +96,7 @@ static UINT32 bufferFrames;
 static WAVEFORMATEX requestedFormat;
 static WAVEFORMATEX *format;
 static WAVEFORMATEX *allocatedFormat = NULL;
+static kinc_wasapi_samples_t sampleFormat = KINC_WASAPI_SAMPLES_UNSUPPORTED; // how format's samples are written
 static uint32_t samples_per_second = 44100;
 
 // Output follows the system's default render device (eRender, eConsole), or a device picked with kinc_a2_select_device. Devices are only ever opened,
@@ -164,6 +171,7 @@ static void releaseDevice(void) {
 		allocatedFormat = NULL;
 	}
 	format = NULL;
+	sampleFormat = KINC_WASAPI_SAMPLES_UNSUPPORTED;
 }
 
 // Drops the selection when it is still id.
@@ -174,6 +182,27 @@ static void dropSelection(const wchar_t *id) {
 		selected_id = NULL;
 	}
 	kinc_mutex_unlock(&device_mutex);
+}
+
+// The sample type of a mix format; a WAVE_FORMAT_EXTENSIBLE one says it in SubFormat.
+static kinc_wasapi_samples_t samplesOf(const WAVEFORMATEX *f) {
+	unsigned tag = f->wFormatTag;
+	if (tag == WAVE_FORMAT_EXTENSIBLE) {
+		const WAVEFORMATEXTENSIBLE *extensible = (const WAVEFORMATEXTENSIBLE *)f;
+		if (f->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+			tag = 0;
+		}
+		else if (IsEqualGUID(&extensible->SubFormat, &kinc_KSDATAFORMAT_SUBTYPE_PCM)) {
+			tag = KINC_WASAPI_TAG_PCM;
+		}
+		else if (IsEqualGUID(&extensible->SubFormat, &kinc_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+			tag = KINC_WASAPI_TAG_IEEE_FLOAT;
+		}
+		else {
+			tag = 0;
+		}
+	}
+	return kinc_wasapi_samples_of(tag, f->wBitsPerSample, f->nChannels, f->nBlockAlign);
 }
 
 static IMMDevice *defaultDevice(void) {
@@ -284,6 +313,12 @@ static bool initDevice(IMMDevice *dev) {
 		return false;
 	}
 
+	sampleFormat = samplesOf(format);
+	if (sampleFormat == KINC_WASAPI_SAMPLES_UNSUPPORTED) {
+		kinc_log(KINC_LOG_LEVEL_WARNING, "Unsupported WASAPI mix format (tag 0x%x, %u bits, %u channels), going silent.", (unsigned)format->wFormatTag,
+		         (unsigned)format->wBitsPerSample, (unsigned)format->nChannels);
+	}
+
 	uint32_t old_samples_per_second = samples_per_second;
 	samples_per_second = format->nSamplesPerSec;
 	if (samples_per_second != old_samples_per_second) {
@@ -315,7 +350,7 @@ static void submitEmptyBuffer(unsigned frames) {
 		return;
 	}
 
-	memset(buffer, 0, frames * format->nBlockAlign);
+	kinc_wasapi_write_silence(buffer, frames * format->nBlockAlign, sampleFormat);
 
 	result = renderClient->lpVtbl->ReleaseBuffer(renderClient, frames, 0);
 }
@@ -412,36 +447,25 @@ static void submitBuffer(unsigned frames) {
 		return;
 	}
 
-	// A mono format gets left and right mixed down; channels past the first two (a surround mix format) stay silent.
-	memset(buffer, 0, frames * format->nBlockAlign);
+	// A mono format gets left and right mixed down; channels past the first two (a surround mix format) stay silent. A sample format that can not be
+	// written stays silent too, the mixed samples are still consumed.
+	kinc_wasapi_write_silence(buffer, frames * format->nBlockAlign, sampleFormat);
 	if (kinc_a2_internal_callback(&a2_buffer, frames)) {
 		bool mono = format->nChannels < 2;
-		if (format->wFormatTag == WAVE_FORMAT_PCM) {
-			for (UINT32 i = 0; i < frames; ++i) {
-				float left, right;
-				readSample(&left, &right);
-				int16_t *out = (int16_t *)&buffer[i * format->nBlockAlign];
-				if (mono) {
-					out[0] = (int16_t)((left + right) * 0.5f * 32767);
-				}
-				else {
-					out[0] = (int16_t)(left * 32767);
-					out[1] = (int16_t)(right * 32767);
-				}
+		unsigned sampleBytes = kinc_wasapi_sample_bytes(sampleFormat);
+		for (UINT32 i = 0; i < frames; ++i) {
+			float left, right;
+			readSample(&left, &right);
+			if (sampleFormat == KINC_WASAPI_SAMPLES_UNSUPPORTED) {
+				continue;
 			}
-		}
-		else {
-			for (UINT32 i = 0; i < frames; ++i) {
-				float left, right;
-				readSample(&left, &right);
-				float *out = (float *)&buffer[i * format->nBlockAlign];
-				if (mono) {
-					out[0] = (left + right) * 0.5f;
-				}
-				else {
-					out[0] = left;
-					out[1] = right;
-				}
+			BYTE *out = &buffer[i * format->nBlockAlign];
+			if (mono) {
+				kinc_wasapi_write_sample(out, sampleFormat, (left + right) * 0.5f);
+			}
+			else {
+				kinc_wasapi_write_sample(out, sampleFormat, left);
+				kinc_wasapi_write_sample(out + sampleBytes, sampleFormat, right);
 			}
 		}
 	}
