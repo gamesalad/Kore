@@ -32,7 +32,9 @@ static void affirm(OSStatus err) {
 // stopping the world, for example). device_mutex only guards the device list and the selection, and is never held across a CoreAudio call that waits for
 // the IOProc.
 
-static bool initialized = false;
+static bool initialized = false; // between kinc_a2_init and kinc_a2_shutdown
+static bool created = false;     // the one-time setup (mutexes, buffer, queue) is done
+static bool running = false;     // device_queue only: false after kinc_a2_shutdown, rebind_device does nothing then
 static bool soundPlaying = false;
 static AudioDeviceID device = kAudioDeviceUnknown;
 static UInt32 deviceBufferSize;
@@ -326,6 +328,10 @@ static void drop_selection(CFStringRef uid) {
 // the device in use changed (a device that failed to open is not in use, so retrying it on every notification reports nothing) or the selection was
 // dropped.
 static void rebind_device(void) {
+	if (!running) {
+		return;
+	}
+
 	kinc_mutex_lock(&device_mutex);
 	CFStringRef uid = selected_uid != NULL ? (CFStringRef)CFRetain(selected_uid) : NULL;
 	kinc_mutex_unlock(&device_mutex);
@@ -384,50 +390,6 @@ static OSStatus device_listener(AudioObjectID object, UInt32 count, const AudioO
 
 static const AudioObjectPropertySelector listened_properties[] = {kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDevices};
 
-void kinc_a2_init(void) {
-	if (initialized) {
-		return;
-	}
-
-	kinc_a2_internal_init();
-	kinc_mutex_init(&device_mutex);
-	initialized = true;
-
-	a2_buffer.read_location = 0;
-	a2_buffer.write_location = 0;
-	a2_buffer.data_size = 128 * 1024;
-	a2_buffer.channel_count = 2;
-	a2_buffer.channels[0] = (float *)calloc(a2_buffer.data_size, sizeof(float));
-	a2_buffer.channels[1] = (float *)calloc(a2_buffer.data_size, sizeof(float));
-
-	device_queue = dispatch_queue_create("kinc.audio2.device", DISPATCH_QUEUE_SERIAL);
-
-	for (size_t i = 0; i < sizeof(listened_properties) / sizeof(listened_properties[0]); ++i) {
-		AudioObjectPropertyAddress address = property_address(listened_properties[i], kAudioObjectPropertyScopeGlobal);
-		affirm(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, device_listener, NULL));
-	}
-
-	// Synchronous: no kinc_a2 callback can be set yet, so the first device is open when kinc_a2_init returns, like before.
-	dispatch_sync(device_queue, ^{
-	  start_device(default_output_device());
-	});
-}
-
-void kinc_a2_update(void) {}
-
-void kinc_a2_shutdown(void) {
-	if (!initialized) {
-		return;
-	}
-	for (size_t i = 0; i < sizeof(listened_properties) / sizeof(listened_properties[0]); ++i) {
-		AudioObjectPropertyAddress address = property_address(listened_properties[i], kAudioObjectPropertyScopeGlobal);
-		affirm(AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address, device_listener, NULL));
-	}
-	dispatch_sync(device_queue, ^{
-	  stop_device();
-	});
-}
-
 static void free_device_list(void) {
 	for (int i = 0; i < device_list_count; ++i) {
 		if (device_list[i].uid != NULL) {
@@ -437,6 +399,74 @@ static void free_device_list(void) {
 	free(device_list);
 	device_list = NULL;
 	device_list_count = 0;
+}
+
+void kinc_a2_init(void) {
+	if (initialized) {
+		return;
+	}
+
+	bool first = !created;
+	if (first) {
+		created = true;
+		kinc_a2_internal_init();
+		kinc_mutex_init(&device_mutex);
+
+		a2_buffer.read_location = 0;
+		a2_buffer.write_location = 0;
+		a2_buffer.data_size = 128 * 1024;
+		a2_buffer.channel_count = 2;
+		a2_buffer.channels[0] = (float *)calloc(a2_buffer.data_size, sizeof(float));
+		a2_buffer.channels[1] = (float *)calloc(a2_buffer.data_size, sizeof(float));
+
+		device_queue = dispatch_queue_create("kinc.audio2.device", DISPATCH_QUEUE_SERIAL);
+	}
+	initialized = true;
+
+	for (size_t i = 0; i < sizeof(listened_properties) / sizeof(listened_properties[0]); ++i) {
+		AudioObjectPropertyAddress address = property_address(listened_properties[i], kAudioObjectPropertyScopeGlobal);
+		affirm(AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address, device_listener, NULL));
+	}
+
+	void (^start)(void) = ^{
+	  running = true;
+	  start_device(default_output_device());
+	};
+	if (first) {
+		// Synchronous: no kinc_a2 callback can be set yet, so the first device is open when kinc_a2_init returns, like before.
+		dispatch_sync(device_queue, start);
+	}
+	else {
+		// After kinc_a2_shutdown a callback may be set, and the stop queued by the shutdown may still be waiting for it - never wait here.
+		dispatch_async(device_queue, start);
+	}
+}
+
+void kinc_a2_update(void) {}
+
+// Stops output and drops the device selection and list. It does not wait for the device to stop: the IOProc may be running the kinc_a2 callback, and
+// that may be waiting for this thread (a garbage collector stopping the world), while AudioDeviceStop waits for the IOProc. So the callback can run once
+// more after this returns. kinc_a2_init starts output again.
+void kinc_a2_shutdown(void) {
+	if (!initialized) {
+		return;
+	}
+	initialized = false;
+	for (size_t i = 0; i < sizeof(listened_properties) / sizeof(listened_properties[0]); ++i) {
+		AudioObjectPropertyAddress address = property_address(listened_properties[i], kAudioObjectPropertyScopeGlobal);
+		affirm(AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address, device_listener, NULL));
+	}
+	kinc_mutex_lock(&device_mutex);
+	if (selected_uid != NULL) {
+		CFRelease(selected_uid);
+		selected_uid = NULL;
+	}
+	free_device_list();
+	kinc_mutex_unlock(&device_mutex);
+	dispatch_async(device_queue, ^{
+	  running = false;
+	  stop_device();
+	});
 }
 
 int kinc_a2_device_count(void) {

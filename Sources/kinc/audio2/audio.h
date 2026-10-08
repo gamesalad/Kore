@@ -54,7 +54,9 @@ KINC_FUNC void kinc_a2_set_sample_rate_callback(void (*kinc_a2_sample_rate_callb
 KINC_FUNC void kinc_a2_update(void);
 
 /// <summary>
-/// Shuts down the Audio2-API.
+/// Shuts down the Audio2-API. On macOS and with WASAPI it does not wait for the audio thread (which may be inside the audio callback, waiting for the
+/// calling thread), so the callback can run once more after it returns; output stops shortly after, the device selection is dropped, and kinc_a2_init
+/// starts output again.
 /// </summary>
 KINC_FUNC void kinc_a2_shutdown(void);
 

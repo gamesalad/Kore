@@ -100,6 +100,8 @@ static wchar_t *selected_id = NULL; // NULL: follow the system default
 static wchar_t *current_id = NULL;  // the device that is open, audio thread only
 static HANDLE reinitEvent = 0;
 static volatile LONG reinitRequested = 0;
+static volatile LONG stopRequested = 0;   // set by kinc_a2_shutdown: the audio thread closes the device and waits for kinc_a2_init
+static volatile LONG resumeQuietly = 0;   // set by kinc_a2_init after a shutdown: reopening is not a device change
 
 typedef struct {
 	wchar_t *id;
@@ -326,6 +328,14 @@ static bool sameId(const wchar_t *a, const wchar_t *b) {
 // The device-changed callback fires when the device in use changed (one that failed to open is not in use, so the retries while there is no device
 // report nothing) or the selection was dropped.
 static void reinitAudio(bool force) {
+	if (stopRequested) {
+		releaseDevice();
+		free(current_id);
+		current_id = NULL;
+		return;
+	}
+	bool quiet = InterlockedExchange(&resumeQuietly, 0) != 0;
+
 	bool fell_back = false;
 	bool selected = false;
 	IMMDevice *target = findDevice(&fell_back, &selected);
@@ -374,7 +384,7 @@ static void reinitAudio(bool force) {
 
 	bool changed = fell_back || !sameId(previous_id, audioClient != NULL ? current_id : NULL);
 	free(previous_id);
-	if (changed) {
+	if (changed && !quiet) {
 		kinc_a2_internal_device_changed_callback();
 	}
 }
@@ -451,8 +461,8 @@ static DWORD WINAPI audioThread(LPVOID ignored) {
 	}
 	while (1) {
 		if (audioClient == NULL) {
-			// No device open: wait for a device notification, and retry now and then.
-			WaitForSingleObject(reinitEvent, 2000);
+			// No device open: wait for a device notification, and retry now and then - unless stopped, then wait for kinc_a2_init.
+			WaitForSingleObject(reinitEvent, stopRequested ? INFINITE : 2000);
 			InterlockedExchange(&reinitRequested, 0);
 			reinitAudio(false);
 			continue;
@@ -535,39 +545,50 @@ static IMMNotificationClient notificationClient = {&notificationVtbl};
 
 void kinc_windows_co_initialize(void);
 
-static bool initialized = false;
+static bool initialized = false; // between kinc_a2_init and kinc_a2_shutdown
+static HANDLE audio_thread = NULL;
 
 void kinc_a2_init() {
 	if (initialized) {
 		return;
 	}
 
-	kinc_a2_internal_init();
-	kinc_mutex_init(&device_mutex);
+	if (audio_thread == NULL) {
+		kinc_a2_internal_init();
+		kinc_mutex_init(&device_mutex);
+
+		a2_buffer.read_location = 0;
+		a2_buffer.write_location = 0;
+		a2_buffer.data_size = 128 * 1024;
+		a2_buffer.channel_count = 2;
+		a2_buffer.channels[0] = (float *)malloc(a2_buffer.data_size * sizeof(float));
+		a2_buffer.channels[1] = (float *)malloc(a2_buffer.data_size * sizeof(float));
+
+		reinitEvent = CreateEvent(0, FALSE, FALSE, 0);
+		kinc_affirm(reinitEvent != 0);
+
+		kinc_windows_co_initialize();
+		kinc_microsoft_affirm(CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void **)&deviceEnumerator));
+	}
 	initialized = true;
-
-	a2_buffer.read_location = 0;
-	a2_buffer.write_location = 0;
-	a2_buffer.data_size = 128 * 1024;
-	a2_buffer.channel_count = 2;
-	a2_buffer.channels[0] = (float *)malloc(a2_buffer.data_size * sizeof(float));
-	a2_buffer.channels[1] = (float *)malloc(a2_buffer.data_size * sizeof(float));
-
-	reinitEvent = CreateEvent(0, FALSE, FALSE, 0);
-	kinc_affirm(reinitEvent != 0);
-
-	kinc_windows_co_initialize();
-	kinc_microsoft_affirm(CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void **)&deviceEnumerator));
 	kinc_microsoft_affirm(deviceEnumerator->lpVtbl->RegisterEndpointNotificationCallback(deviceEnumerator, &notificationClient));
 
-	// The first device opens here, before the audio thread exists - no kinc_a2 callback can be set yet.
-	bool fell_back = false;
-	bool selected = false;
-	IMMDevice *first = findDevice(&fell_back, &selected);
-	current_id = deviceId(first);
-	initDevice(first);
-	// The thread runs even without a device, to pick one up when it appears.
-	CreateThread(0, 65536, audioThread, NULL, 0, 0);
+	if (audio_thread == NULL) {
+		// The first device opens here, before the audio thread exists - no kinc_a2 callback can be set yet.
+		bool fell_back = false;
+		bool selected = false;
+		IMMDevice *first = findDevice(&fell_back, &selected);
+		current_id = deviceId(first);
+		initDevice(first);
+		// The thread runs even without a device, to pick one up when it appears. It is never ended, kinc_a2_shutdown parks it.
+		audio_thread = CreateThread(0, 65536, audioThread, NULL, 0, 0);
+	}
+	else {
+		// After kinc_a2_shutdown: the parked audio thread reopens the device.
+		InterlockedExchange(&resumeQuietly, 1);
+		InterlockedExchange(&stopRequested, 0);
+		requestReinit();
+	}
 }
 
 void kinc_a2_update() {}
@@ -682,21 +703,20 @@ int kinc_a2_selected_device(void) {
 	return index;
 }
 
-#define SAFE_RELEASE(punk)                                                                                                                                     \
-	if ((punk) != NULL) {                                                                                                                                      \
-		(punk)->Release();                                                                                                                                     \
-		(punk) = NULL;                                                                                                                                         \
-	}
-
+// Stops output and drops the device selection and list. It does not wait for the audio thread: that may be running the kinc_a2 callback, which may be
+// waiting for this thread (a garbage collector stopping the world). The audio thread closes the device on its next wakeup, so the callback can run once
+// more after this returns. kinc_a2_init starts output again.
 void kinc_a2_shutdown() {
-	// Wait for last data in buffer to play before stopping.
-	// Sleep((DWORD)(hnsActualDuration/REFTIMES_PER_MILLISEC/2));
-
-	//	affirm(pAudioClient->Stop());  // Stop playing.
-
-	//	CoTaskMemFree(pwfx);
-	//	SAFE_RELEASE(pEnumerator)
-	//	SAFE_RELEASE(pDevice)
-	//	SAFE_RELEASE(pAudioClient)
-	//	SAFE_RELEASE(pRenderClient)
+	if (!initialized) {
+		return;
+	}
+	initialized = false;
+	deviceEnumerator->lpVtbl->UnregisterEndpointNotificationCallback(deviceEnumerator, &notificationClient);
+	kinc_mutex_lock(&device_mutex);
+	free(selected_id);
+	selected_id = NULL;
+	free_device_list();
+	kinc_mutex_unlock(&device_mutex);
+	InterlockedExchange(&stopRequested, 1);
+	requestReinit();
 }
