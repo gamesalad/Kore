@@ -220,12 +220,13 @@ static size_t buffer_offset = 0;
 static uint8_t *last_allocated_pointer = 0;
 
 static void *buffer_malloc(size_t size) {
-	uint8_t *current = &buffer[buffer_offset];
-	buffer_offset += size + sizeof(size_t);
-	if (buffer_offset > BUFFER_SIZE) {
+	// Fail without moving buffer_offset, so a failed allocation leaves the buffer as it was.
+	if (size > BUFFER_SIZE - sizeof(size_t) || buffer_offset > BUFFER_SIZE - sizeof(size_t) - size) {
 		kinc_log(KINC_LOG_LEVEL_ERROR, "Not enough memory on image.c Buffer.");
 		return NULL;
 	}
+	uint8_t *current = &buffer[buffer_offset];
+	buffer_offset += size + sizeof(size_t);
 	memcpy(current, &size, sizeof(size_t));
 	last_allocated_pointer = current + sizeof(size_t);
 	return current + sizeof(size_t);
@@ -242,10 +243,14 @@ static void *buffer_realloc(void *p, size_t size) {
 	}
 	else {
 		if (last_allocated_pointer == old_pointer) {
-			size_t last_size = &buffer[buffer_offset] - old_pointer;
-			size_t size_diff = size - last_size;
-			buffer_offset += size_diff + sizeof(size_t);
-			return old_pointer;
+			// Grow the last block in place only if it still fits in the buffer;
+			// otherwise fall through to a fresh block, which fails cleanly.
+			size_t start = (size_t)(old_pointer - buffer);
+			if (size <= BUFFER_SIZE - start) {
+				memcpy(old_pointer - sizeof(size_t), &size, sizeof(size_t));
+				buffer_offset = start + size;
+				return old_pointer;
+			}
 		}
 		uint8_t *new_pointer = (uint8_t *)buffer_malloc(size);
 		if (new_pointer == NULL) {
@@ -540,6 +545,7 @@ static bool loadImage(kinc_image_read_callbacks_t callbacks, void *user_data, co
 		float *uncompressed = stbi_loadf_from_callbacks(&stbi_callbacks, &reader, width, height, &comp, 4);
 		if (uncompressed == NULL) {
 			kinc_log(KINC_LOG_LEVEL_ERROR, stbi_failure_reason());
+			buffer_offset = 0;
 			return false;
 		}
 		*outputSize = (size_t)(*width * *height * 16);
@@ -565,6 +571,7 @@ static bool loadImage(kinc_image_read_callbacks_t callbacks, void *user_data, co
 		uint8_t *uncompressed = stbi_load_from_callbacks(&stbi_callbacks, &reader, width, height, &comp, 4);
 		if (uncompressed == NULL) {
 			kinc_log(KINC_LOG_LEVEL_ERROR, stbi_failure_reason());
+			buffer_offset = 0;
 			return false;
 		}
 
