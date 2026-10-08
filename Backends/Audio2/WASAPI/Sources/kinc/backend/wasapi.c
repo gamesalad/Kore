@@ -383,26 +383,13 @@ static void restartAudio(void) {
 	reinitAudio(true);
 }
 
-static void copyS16Sample(int16_t *left, int16_t *right) {
-	float left_value = *(float *)&a2_buffer.channels[0][a2_buffer.read_location];
-	float right_value = *(float *)&a2_buffer.channels[1][a2_buffer.read_location];
+static void readSample(float *left, float *right) {
+	*left = a2_buffer.channels[0][a2_buffer.read_location];
+	*right = a2_buffer.channels[1][a2_buffer.read_location];
 	a2_buffer.read_location += 1;
 	if (a2_buffer.read_location >= a2_buffer.data_size) {
 		a2_buffer.read_location = 0;
 	}
-	*left = (int16_t)(left_value * 32767);
-	*right = (int16_t)(right_value * 32767);
-}
-
-static void copyFloatSample(float *left, float *right) {
-	float left_value = *(float *)&a2_buffer.channels[0][a2_buffer.read_location];
-	float right_value = *(float *)&a2_buffer.channels[1][a2_buffer.read_location];
-	a2_buffer.read_location += 1;
-	if (a2_buffer.read_location >= a2_buffer.data_size) {
-		a2_buffer.read_location = 0;
-	}
-	*left = left_value;
-	*right = right_value;
 }
 
 static void submitBuffer(unsigned frames) {
@@ -415,17 +402,36 @@ static void submitBuffer(unsigned frames) {
 		return;
 	}
 
-	// Channels past the first two (a surround mix format) stay silent.
+	// A mono format gets left and right mixed down; channels past the first two (a surround mix format) stay silent.
 	memset(buffer, 0, frames * format->nBlockAlign);
 	if (kinc_a2_internal_callback(&a2_buffer, frames)) {
+		bool mono = format->nChannels < 2;
 		if (format->wFormatTag == WAVE_FORMAT_PCM) {
 			for (UINT32 i = 0; i < frames; ++i) {
-				copyS16Sample((int16_t *)&buffer[i * format->nBlockAlign], (int16_t *)&buffer[i * format->nBlockAlign + 2]);
+				float left, right;
+				readSample(&left, &right);
+				int16_t *out = (int16_t *)&buffer[i * format->nBlockAlign];
+				if (mono) {
+					out[0] = (int16_t)((left + right) * 0.5f * 32767);
+				}
+				else {
+					out[0] = (int16_t)(left * 32767);
+					out[1] = (int16_t)(right * 32767);
+				}
 			}
 		}
 		else {
 			for (UINT32 i = 0; i < frames; ++i) {
-				copyFloatSample((float *)&buffer[i * format->nBlockAlign], (float *)&buffer[i * format->nBlockAlign + 4]);
+				float left, right;
+				readSample(&left, &right);
+				float *out = (float *)&buffer[i * format->nBlockAlign];
+				if (mono) {
+					out[0] = (left + right) * 0.5f;
+				}
+				else {
+					out[0] = left;
+					out[1] = right;
+				}
 			}
 		}
 	}
