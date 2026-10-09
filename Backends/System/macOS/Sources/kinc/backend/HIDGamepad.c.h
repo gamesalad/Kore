@@ -187,6 +187,8 @@ void HIDGamepad_bind(struct HIDGamepad *gamepad, IOHIDDeviceRef inDeviceRef, int
 		cstringFromCFStringRef(productRef, gamepad->hidDeviceProduct, sizeof(gamepad->hidDeviceProduct));
 	}
 
+	kinc_macos_internal_gamepad_set_hid_ids(gamepad->padIndex, gamepad->hidDeviceVendorID, gamepad->hidDeviceProductID);
+
 	// Initialise Kore::Gamepad for this HID Device
 	//**
 	/*Gamepad *gamepad = Gamepad::get(padIndex);
@@ -276,6 +278,7 @@ void HIDGamepad_unbind(struct HIDGamepad *gamepad) {
 	}
 
 	if (gamepad->padIndex >= 0) {
+		kinc_macos_internal_gamepad_set_hid_ids(gamepad->padIndex, -1, -1);
 		//**
 		/*Gamepad *gamepad = Gamepad::get(padIndex);
 		gamepad->vendor 	 = nullptr;

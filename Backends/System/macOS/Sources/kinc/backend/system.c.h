@@ -71,3 +71,33 @@ bool        kinc_gamepad_connected(int num)        { return false; }
 #endif
 
 void kinc_gamepad_rumble(int gamepad, float left, float right) {}
+
+// USB/HID vendor and product ids per gamepad index, written by
+// HIDGamepad_bind/_unbind. They live here rather than in HIDGamepad.c.h so the
+// accessors resolve whichever gamepad code is compiled in.
+static int gamepad_hid_vendor_ids[KINC_GAMEPAD_MAX_COUNT];
+static int gamepad_hid_product_ids[KINC_GAMEPAD_MAX_COUNT];
+static bool gamepad_hid_ids_known[KINC_GAMEPAD_MAX_COUNT];
+
+void kinc_macos_internal_gamepad_set_hid_ids(int gamepad, int vendor_id, int product_id) {
+	if (gamepad < 0 || gamepad >= KINC_GAMEPAD_MAX_COUNT) {
+		return;
+	}
+	gamepad_hid_ids_known[gamepad] = vendor_id >= 0 && product_id >= 0;
+	gamepad_hid_vendor_ids[gamepad] = vendor_id;
+	gamepad_hid_product_ids[gamepad] = product_id;
+}
+
+int kinc_gamepad_vendor_id(int gamepad) {
+	if (gamepad < 0 || gamepad >= KINC_GAMEPAD_MAX_COUNT || !gamepad_hid_ids_known[gamepad]) {
+		return -1;
+	}
+	return gamepad_hid_vendor_ids[gamepad];
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	if (gamepad < 0 || gamepad >= KINC_GAMEPAD_MAX_COUNT || !gamepad_hid_ids_known[gamepad]) {
+		return -1;
+	}
+	return gamepad_hid_product_ids[gamepad];
+}

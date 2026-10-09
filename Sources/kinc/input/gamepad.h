@@ -55,6 +55,20 @@ KINC_FUNC const char *kinc_gamepad_vendor(int gamepad);
 KINC_FUNC const char *kinc_gamepad_product_name(int gamepad);
 
 /// <summary>
+/// Returns the USB/HID vendor id of a gamepad.
+/// </summary>
+/// <param name="gamepad">The index of the gamepad for which to receive the vendor id</param>
+/// <returns>The vendor id, or -1 when no gamepad is connected at the index or the backend can not tell</returns>
+KINC_FUNC int kinc_gamepad_vendor_id(int gamepad);
+
+/// <summary>
+/// Returns the USB/HID product id of a gamepad.
+/// </summary>
+/// <param name="gamepad">The index of the gamepad for which to receive the product id</param>
+/// <returns>The product id, or -1 when no gamepad is connected at the index or the backend can not tell</returns>
+KINC_FUNC int kinc_gamepad_product_id(int gamepad);
+
+/// <summary>
 /// Checks whether a gamepad is connected.
 /// </summary>
 /// <param name="gamepad">The index of the gamepad which's connection will be checked</param>

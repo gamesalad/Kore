@@ -121,6 +121,15 @@ const char *kinc_gamepad_product_name(int gamepad) {
 	return gamepad >= 0 && gamepad < KINC_GAMEPAD_MAX_COUNT ? gamepads[gamepad].name : "";
 }
 
+// The joystick API used here reports no USB ids.
+int kinc_gamepad_vendor_id(int gamepad) {
+	return -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return -1;
+}
+
 bool kinc_gamepad_connected(int gamepad) {
 	return gamepad >= 0 && gamepad < KINC_GAMEPAD_MAX_COUNT && gamepads[gamepad].connected;
 }
