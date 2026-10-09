@@ -102,6 +102,15 @@ const char *kinc_gamepad_product_name(int gamepad) {
 	return "Xbox 360 Controller";
 }
 
+// XInput reports no USB ids.
+int kinc_gamepad_vendor_id(int gamepad) {
+	return -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return -1;
+}
+
 bool kinc_internal_handle_messages(void) {
 	CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
 

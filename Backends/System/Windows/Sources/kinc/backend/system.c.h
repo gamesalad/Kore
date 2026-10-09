@@ -733,6 +733,8 @@ static IDirectInputDevice8W *di_pads[KINC_DINPUT_MAX_COUNT];
 static DIJOYSTATE2 di_padState[KINC_DINPUT_MAX_COUNT];
 static DIJOYSTATE2 di_lastPadState[KINC_DINPUT_MAX_COUNT];
 static DIDEVCAPS di_deviceCaps[KINC_DINPUT_MAX_COUNT];
+static int di_vendorIds[KINC_DINPUT_MAX_COUNT];
+static int di_productIds[KINC_DINPUT_MAX_COUNT];
 static int padCount = 0;
 
 static void cleanupPad(int padIndex) {
@@ -910,6 +912,10 @@ static BOOL CALLBACK enumerateJoysticksCallback(LPCDIDEVICEINSTANCEW ddi, LPVOID
 	HRESULT hr = di_instance->lpVtbl->CreateDevice(di_instance, &ddi->guidInstance, &di_pads[padCount], NULL);
 
 	if (SUCCEEDED(hr)) {
+		// DirectInput's product GUID of a HID device carries MAKELONG(vendor id, product id) in Data1.
+		di_vendorIds[padCount] = LOWORD(ddi->guidProduct.Data1);
+		di_productIds[padCount] = HIWORD(ddi->guidProduct.Data1);
+
 		hr = di_pads[padCount]->lpVtbl->SetDataFormat(di_pads[padCount], &c_dfDIJoystick2);
 
 		// TODO (DK) required?
@@ -1101,6 +1107,22 @@ const char *kinc_gamepad_vendor(int gamepad) {
 	else {
 		return "DirectInput8";
 	}
+}
+
+// XInput reports no USB ids; a DirectInput pad has the ones it enumerated with.
+static bool hasDirectInputIds(int gamepad) {
+	if (gamepad < 0 || gamepad >= KINC_DINPUT_MAX_COUNT || di_pads[gamepad] == NULL) {
+		return false;
+	}
+	return InputGetState == NULL || !isXInputGamepad(gamepad);
+}
+
+int kinc_gamepad_vendor_id(int gamepad) {
+	return hasDirectInputIds(gamepad) ? di_vendorIds[gamepad] : -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return hasDirectInputIds(gamepad) ? di_productIds[gamepad] : -1;
 }
 
 const char *kinc_gamepad_product_name(int gamepad) {

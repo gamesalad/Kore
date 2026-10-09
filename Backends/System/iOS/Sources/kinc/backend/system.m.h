@@ -182,3 +182,12 @@ int main(int argc, char *argv[]) {
 	}
 	return retVal;
 }
+
+// GCController exposes no USB vendor or product id.
+int kinc_gamepad_vendor_id(int gamepad) {
+	return -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return -1;
+}

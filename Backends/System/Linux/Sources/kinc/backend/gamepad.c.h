@@ -16,8 +16,25 @@ struct HIDGamepad {
 	char name[385];
 	int file_descriptor;
 	bool connected;
+	int vendor_id;
+	int product_id;
 	struct js_event gamepadEvent;
 };
+
+// The joystick API has no ioctl for the USB ids; the input device behind
+// /dev/input/jsN publishes them in sysfs as hex text.
+static int HIDGamepad_read_sysfs_id(int idx, const char *field) {
+	char path[128];
+	snprintf(path, sizeof(path), "/sys/class/input/js%d/device/id/%s", idx, field);
+	FILE *file = fopen(path, "r");
+	if (file == NULL) {
+		return -1;
+	}
+	unsigned int value;
+	int read = fscanf(file, "%x", &value);
+	fclose(file);
+	return read == 1 && value <= 0xffff ? (int)value : -1;
+}
 
 static void HIDGamepad_open(struct HIDGamepad *pad) {
 	pad->file_descriptor = open(pad->gamepad_dev_name, O_RDONLY | O_NONBLOCK);
@@ -32,6 +49,8 @@ static void HIDGamepad_open(struct HIDGamepad *pad) {
 			strncpy(buf, "Unknown", sizeof(buf));
 		}
 		snprintf(pad->name, sizeof(pad->name), "%s(%s)", buf, pad->gamepad_dev_name);
+		pad->vendor_id = HIDGamepad_read_sysfs_id(pad->idx, "vendor");
+		pad->product_id = HIDGamepad_read_sysfs_id(pad->idx, "product");
 		kinc_internal_gamepad_trigger_connect(pad->idx);
 	}
 }
@@ -39,6 +58,8 @@ static void HIDGamepad_open(struct HIDGamepad *pad) {
 static void HIDGamepad_init(struct HIDGamepad *pad, int index) {
 	pad->file_descriptor = -1;
 	pad->connected = false;
+	pad->vendor_id = -1;
+	pad->product_id = -1;
 	pad->gamepad_dev_name[0] = 0;
 	if (index >= 0 && index < 12) {
 		pad->idx = index;
@@ -53,6 +74,8 @@ static void HIDGamepad_close(struct HIDGamepad *pad) {
 		close(pad->file_descriptor);
 		pad->file_descriptor = -1;
 		pad->connected = false;
+		pad->vendor_id = -1;
+		pad->product_id = -1;
 	}
 }
 
@@ -189,6 +212,14 @@ const char *kinc_gamepad_vendor(int gamepad) {
 
 const char *kinc_gamepad_product_name(int gamepad) {
 	return gamepad >= 0 && gamepad < KINC_GAMEPAD_MAX_COUNT ? gamepads[gamepad].name : "";
+}
+
+int kinc_gamepad_vendor_id(int gamepad) {
+	return gamepad >= 0 && gamepad < KINC_GAMEPAD_MAX_COUNT && gamepads[gamepad].connected ? gamepads[gamepad].vendor_id : -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return gamepad >= 0 && gamepad < KINC_GAMEPAD_MAX_COUNT && gamepads[gamepad].connected ? gamepads[gamepad].product_id : -1;
 }
 
 bool kinc_gamepad_connected(int gamepad) {

@@ -1219,6 +1219,15 @@ const char *kinc_gamepad_product_name(int gamepad) {
 	return "gamepad";
 }
 
+// Every controller is reported as gamepad 0 with no per-device tracking, so there are no USB ids to report.
+int kinc_gamepad_vendor_id(int gamepad) {
+	return -1;
+}
+
+int kinc_gamepad_product_id(int gamepad) {
+	return -1;
+}
+
 #include <kinc/io/filereader.h>
 
 #define CLASS_NAME "android/app/NativeActivity"
