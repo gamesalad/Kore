@@ -124,13 +124,24 @@ static void logAxis(int axisIndex) {
 // The buffer is set to an empty string if the conversion fails.
 static void cstringFromCFStringRef(CFStringRef string, char *cstr, size_t clen) {
 	cstr[0] = '\0';
-	if (string != NULL) {
+	if (string != NULL && CFGetTypeID(string) == CFStringGetTypeID()) {
 		char temp[256];
 		if (CFStringGetCString(string, temp, 256, kCFStringEncodingUTF8)) {
 			temp[kinc_mini(255, (int)(clen - 1))] = '\0';
 			strncpy(cstr, temp, clen);
 		}
 	}
+}
+
+// Reads an integer device property. IOHIDDeviceGetProperty returns NULL when the
+// device does not report the key, so a missing or non-number property gives -1.
+static int intFromDeviceProperty(IOHIDDeviceRef device, CFStringRef key) {
+	CFTypeRef ref = IOHIDDeviceGetProperty(device, key);
+	int value = -1;
+	if (ref == NULL || CFGetTypeID(ref) != CFNumberGetTypeID() || !CFNumberGetValue((CFNumberRef)ref, kCFNumberIntType, &value)) {
+		return -1;
+	}
+	return value;
 }
 
 void HIDGamepad_init(struct HIDGamepad *gamepad) {
@@ -162,7 +173,7 @@ void HIDGamepad_bind(struct HIDGamepad *gamepad, IOHIDDeviceRef inDeviceRef, int
 
 	// ...create a queue to access element values
 	gamepad->hidQueueRef = IOHIDQueueCreate(kCFAllocatorDefault, gamepad->hidDeviceRef, 32, kIOHIDOptionsTypeNone);
-	if (CFGetTypeID(gamepad->hidQueueRef) == IOHIDQueueGetTypeID()) {
+	if (gamepad->hidQueueRef != NULL && CFGetTypeID(gamepad->hidQueueRef) == IOHIDQueueGetTypeID()) {
 		IOHIDQueueStart(gamepad->hidQueueRef);
 		IOHIDQueueRegisterValueAvailableCallback(gamepad->hidQueueRef, valueAvailableCallback, gamepad);
 		IOHIDQueueScheduleWithRunLoop(gamepad->hidQueueRef, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
@@ -170,15 +181,14 @@ void HIDGamepad_bind(struct HIDGamepad *gamepad, IOHIDDeviceRef inDeviceRef, int
 
 	// ...get all elements (buttons, axes)
 	CFArrayRef elementCFArrayRef = IOHIDDeviceCopyMatchingElements(gamepad->hidDeviceRef, NULL, kIOHIDOptionsTypeNone);
-	initDeviceElements(gamepad, elementCFArrayRef);
+	if (elementCFArrayRef != NULL) {
+		initDeviceElements(gamepad, elementCFArrayRef);
+	}
 
 	// ...get device manufacturer and product details
 	{
-		CFNumberRef vendorIdRef = (CFNumberRef)IOHIDDeviceGetProperty(gamepad->hidDeviceRef, CFSTR(kIOHIDVendorIDKey));
-		CFNumberGetValue(vendorIdRef, kCFNumberIntType, &gamepad->hidDeviceVendorID);
-
-		CFNumberRef productIdRef = (CFNumberRef)IOHIDDeviceGetProperty(gamepad->hidDeviceRef, CFSTR(kIOHIDProductIDKey));
-		CFNumberGetValue(productIdRef, kCFNumberIntType, &gamepad->hidDeviceProductID);
+		gamepad->hidDeviceVendorID = intFromDeviceProperty(gamepad->hidDeviceRef, CFSTR(kIOHIDVendorIDKey));
+		gamepad->hidDeviceProductID = intFromDeviceProperty(gamepad->hidDeviceRef, CFSTR(kIOHIDProductIDKey));
 
 		CFStringRef vendorRef = (CFStringRef)IOHIDDeviceGetProperty(gamepad->hidDeviceRef, CFSTR(kIOHIDManufacturerKey));
 		cstringFromCFStringRef(vendorRef, gamepad->hidDeviceVendor, sizeof(gamepad->hidDeviceVendor));
@@ -256,7 +266,7 @@ static void initDeviceElements(struct HIDGamepad *gamepad, CFArrayRef elements) 
 			break;
 		}
 
-		if (elemType == kIOHIDElementTypeInput_Misc || elemType == kIOHIDElementTypeInput_Button || elemType == kIOHIDElementTypeInput_Axis) {
+		if (gamepad->hidQueueRef != NULL && (elemType == kIOHIDElementTypeInput_Misc || elemType == kIOHIDElementTypeInput_Button || elemType == kIOHIDElementTypeInput_Axis)) {
 			if (!IOHIDQueueContainsElement(gamepad->hidQueueRef, elementRef))
 				IOHIDQueueAddElement(gamepad->hidQueueRef, elementRef);
 		}
