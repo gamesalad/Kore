@@ -4,6 +4,8 @@
 #include <IOKit/hid/IOHIDKeys.h>
 #include <IOKit/hid/IOHIDManager.h>
 
+#include <stdbool.h>
+
 struct HIDGamepad {
 	int padIndex;
 	IOHIDDeviceRef hidDeviceRef;
@@ -15,6 +17,9 @@ struct HIDGamepad {
 
 	IOHIDElementCookie axis[6];
 	IOHIDElementCookie buttons[15];
+	// Which axis / buttons slots hold a cookie: 0 is not reserved, so an unset slot cannot be told apart by its value.
+	bool axisSet[6];
+	bool buttonsSet[15];
 };
 
 void HIDGamepad_init(struct HIDGamepad *gamepad);
