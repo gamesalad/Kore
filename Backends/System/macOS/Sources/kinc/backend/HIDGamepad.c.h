@@ -144,6 +144,16 @@ static int intFromDeviceProperty(IOHIDDeviceRef device, CFStringRef key) {
 	return value;
 }
 
+// Returns the index of the set slot holding cookie, or -1.
+static int findCookieSlot(const IOHIDElementCookie *cookies, const bool *set, int count, IOHIDElementCookie cookie) {
+	for (int i = 0; i < count; ++i) {
+		if (set[i] && cookies[i] == cookie) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 void HIDGamepad_init(struct HIDGamepad *gamepad) {
 	reset(gamepad);
 }
@@ -183,6 +193,7 @@ void HIDGamepad_bind(struct HIDGamepad *gamepad, IOHIDDeviceRef inDeviceRef, int
 	CFArrayRef elementCFArrayRef = IOHIDDeviceCopyMatchingElements(gamepad->hidDeviceRef, NULL, kIOHIDOptionsTypeNone);
 	if (elementCFArrayRef != NULL) {
 		initDeviceElements(gamepad, elementCFArrayRef);
+		CFRelease(elementCFArrayRef);
 	}
 
 	// ...get device manufacturer and product details
@@ -228,26 +239,32 @@ static void initDeviceElements(struct HIDGamepad *gamepad, CFArrayRef elements) 
 			case kHIDUsage_GD_X: // Left stick X
 				// log(Info, "Left stick X axis[0] = %i", cookie);
 				gamepad->axis[0] = cookie;
+				gamepad->axisSet[0] = true;
 				break;
 			case kHIDUsage_GD_Y: // Left stick Y
 				// log(Info, "Left stick Y axis[1] = %i", cookie);
 				gamepad->axis[1] = cookie;
+				gamepad->axisSet[1] = true;
 				break;
 			case kHIDUsage_GD_Z: // Left trigger
 				// log(Info, "Left trigger axis[4] = %i", cookie);
 				gamepad->axis[4] = cookie;
+				gamepad->axisSet[4] = true;
 				break;
 			case kHIDUsage_GD_Rx: // Right stick X
 				// log(Info, "Right stick X axis[2] = %i", cookie);
 				gamepad->axis[2] = cookie;
+				gamepad->axisSet[2] = true;
 				break;
 			case kHIDUsage_GD_Ry: // Right stick Y
 				// log(Info, "Right stick Y axis[3] = %i", cookie);
 				gamepad->axis[3] = cookie;
+				gamepad->axisSet[3] = true;
 				break;
 			case kHIDUsage_GD_Rz: // Right trigger
 				// log(Info, "Right trigger axis[5] = %i", cookie);
 				gamepad->axis[5] = cookie;
+				gamepad->axisSet[5] = true;
 				break;
 			case kHIDUsage_GD_Hatswitch:
 				break;
@@ -259,6 +276,7 @@ static void initDeviceElements(struct HIDGamepad *gamepad, CFArrayRef elements) 
 			if ((usage >= 1) && (usage <= 15)) {
 				// Button 1-11
 				gamepad->buttons[usage - 1] = cookie;
+				gamepad->buttonsSet[usage - 1] = true;
 				// log(Info, "Button %i = %i", usage-1, cookie);
 			}
 			break;
@@ -280,6 +298,7 @@ void HIDGamepad_unbind(struct HIDGamepad *gamepad) {
 	if (gamepad->hidQueueRef) {
 		IOHIDQueueStop(gamepad->hidQueueRef);
 		IOHIDQueueUnscheduleFromRunLoop(gamepad->hidQueueRef, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+		CFRelease(gamepad->hidQueueRef); // created by IOHIDQueueCreate in bind; reset() clears the pointer
 	}
 
 	if (gamepad->hidDeviceRef) {
@@ -309,6 +328,8 @@ static void reset(struct HIDGamepad *gamepad) {
 
 	memset(gamepad->axis, 0, sizeof(gamepad->axis));
 	memset(gamepad->buttons, 0, sizeof(gamepad->buttons));
+	memset(gamepad->axisSet, 0, sizeof(gamepad->axisSet));
+	memset(gamepad->buttonsSet, 0, sizeof(gamepad->buttonsSet));
 }
 
 static void buttonChanged(struct HIDGamepad *gamepad, IOHIDElementRef elementRef, IOHIDValueRef valueRef, int buttonIndex) {
@@ -369,19 +390,15 @@ static void valueAvailableCallback(void *inContext, IOReturn inResult, void *inS
 		// log(Info, "page %i, usage %i cookie %i", page, usage, cookie);
 
 		// Check button
-		for (int i = 0, c = sizeof(pad->buttons); i < c; ++i) {
-			if (cookie == pad->buttons[i]) {
-				buttonChanged(pad, elementRef, valueRef, i);
-				break;
-			}
+		int buttonIndex = findCookieSlot(pad->buttons, pad->buttonsSet, (int)(sizeof(pad->buttons) / sizeof(pad->buttons[0])), cookie);
+		if (buttonIndex >= 0) {
+			buttonChanged(pad, elementRef, valueRef, buttonIndex);
 		}
 
 		// Check axes
-		for (int i = 0, c = sizeof(pad->axis); i < c; ++i) {
-			if (cookie == pad->axis[i]) {
-				axisChanged(pad, elementRef, valueRef, i);
-				break;
-			}
+		int axisIndex = findCookieSlot(pad->axis, pad->axisSet, (int)(sizeof(pad->axis) / sizeof(pad->axis[0])), cookie);
+		if (axisIndex >= 0) {
+			axisChanged(pad, elementRef, valueRef, axisIndex);
 		}
 
 		CFRelease(valueRef);
