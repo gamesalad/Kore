@@ -792,20 +792,26 @@ static int write_tex_descs(VkDescriptorImageInfo *tex_descs) {
 		if (vulkanTextures[i] != NULL) {
 			tex_descs[i].sampler = vulkanSamplers[i];
 			tex_descs[i].imageView = vulkanTextures[i]->impl.texture.view;
+			tex_descs[i].imageLayout = vulkanTextures[i]->impl.texture.imageLayout;
 			texture_count++;
 		}
 		else if (vulkanRenderTargets[i] != NULL) {
 			tex_descs[i].sampler = vulkanSamplers[i];
 			if (vulkanRenderTargets[i]->impl.stage_depth == i) {
 				tex_descs[i].imageView = vulkanRenderTargets[i]->impl.depthView;
+				tex_descs[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 				vulkanRenderTargets[i]->impl.stage_depth = -1;
 			}
 			else {
+				// A sampled color render target is in the layout its render pass leaves it in.
 				tex_descs[i].imageView = vulkanRenderTargets[i]->impl.sourceView;
+				tex_descs[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			}
 			texture_count++;
 		}
-		tex_descs[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		else {
+			tex_descs[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		}
 	}
 	return texture_count;
 }
@@ -898,20 +904,26 @@ VkDescriptorSet getDescriptorSet() {
 			assert(vulkanSamplers[i] != VK_NULL_HANDLE);
 			tex_desc[i].sampler = vulkanSamplers[i];
 			tex_desc[i].imageView = vulkanTextures[i]->impl.texture.view;
+			tex_desc[i].imageLayout = vulkanTextures[i]->impl.texture.imageLayout;
 			texture_count++;
 		}
 		else if (vulkanRenderTargets[i] != NULL) {
 			tex_desc[i].sampler = vulkanSamplers[i];
 			if (vulkanRenderTargets[i]->impl.stage_depth == i) {
 				tex_desc[i].imageView = vulkanRenderTargets[i]->impl.depthView;
+				tex_desc[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 				vulkanRenderTargets[i]->impl.stage_depth = -1;
 			}
 			else {
+				// A sampled color render target is in the layout its render pass leaves it in.
 				tex_desc[i].imageView = vulkanRenderTargets[i]->impl.sourceView;
+				tex_desc[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			}
 			texture_count++;
 		}
-		tex_desc[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		else {
+			tex_desc[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		}
 	}
 
 	VkWriteDescriptorSet writes[18];
