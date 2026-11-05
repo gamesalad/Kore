@@ -57,12 +57,20 @@ static uint32_t queue_count;
 
 static VkBool32 vkDebugUtilsMessengerCallbackEXT(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
+	const char *id_name = pCallbackData->pMessageIdName != NULL ? pCallbackData->pMessageIdName : "";
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		kinc_log(KINC_LOG_LEVEL_ERROR, "Vulkan ERROR: Code %d : %s", pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		kinc_log(KINC_LOG_LEVEL_ERROR, "Vulkan ERROR: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		// Validation errors are reported and execution continues, so one run shows every error.
+		// Define KINC_VULKAN_BREAK_ON_VALIDATION_ERROR to stop in the debugger on the first one.
+#ifdef KINC_VULKAN_BREAK_ON_VALIDATION_ERROR
 		kinc_debug_break();
+#endif
 	}
 	else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-		kinc_log(KINC_LOG_LEVEL_WARNING, "Vulkan WARNING: Code %d : %s", pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		kinc_log(KINC_LOG_LEVEL_WARNING, "Vulkan WARNING: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
+	}
+	else {
+		kinc_log(KINC_LOG_LEVEL_INFO, "Vulkan: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
 	}
 	return VK_FALSE;
 }
