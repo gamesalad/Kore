@@ -33,6 +33,15 @@ static VkRenderPass mrtRenderPass[16];
 
 static bool in_render_pass = false;
 
+// The framebuffer render pass for the next begin on the acquired swapchain image:
+// the first one in a frame discards its contents, later ones load them.
+static VkRenderPass framebuffer_render_pass_to_begin(void) {
+	struct vk_window *window = &vk_ctx.windows[vk_ctx.current_window];
+	VkRenderPass pass = framebuffer_pass_begun ? window->framebuffer_render_pass_load : window->framebuffer_render_pass;
+	framebuffer_pass_begun = true;
+	return pass;
+}
+
 static void endPass(kinc_g5_command_list_t *list) {
 	if (in_render_pass) {
 		vkCmdEndRenderPass(list->impl._buffer);
@@ -277,7 +286,7 @@ void kinc_g5_command_list_begin(kinc_g5_command_list_t *list) {
 	VkRenderPassBeginInfo rp_begin = {0};
 	rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	rp_begin.pNext = NULL;
-	rp_begin.renderPass = vk_ctx.windows[vk_ctx.current_window].framebuffer_render_pass;
+	rp_begin.renderPass = framebuffer_render_pass_to_begin();
 	rp_begin.framebuffer = vk_ctx.windows[vk_ctx.current_window].framebuffers[vk_ctx.windows[vk_ctx.current_window].current_image];
 	rp_begin.renderArea.offset.x = 0;
 	rp_begin.renderArea.offset.y = 0;
@@ -523,7 +532,7 @@ void kinc_internal_restore_render_target(kinc_g5_command_list_t *list, struct ki
 	VkRenderPassBeginInfo rp_begin = {0};
 	rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	rp_begin.pNext = NULL;
-	rp_begin.renderPass = vk_ctx.windows[vk_ctx.current_window].framebuffer_render_pass;
+	rp_begin.renderPass = framebuffer_render_pass_to_begin();
 	rp_begin.framebuffer = vk_ctx.windows[vk_ctx.current_window].framebuffers[vk_ctx.windows[vk_ctx.current_window].current_image];
 	rp_begin.renderArea.offset.x = 0;
 	rp_begin.renderArea.offset.y = 0;
@@ -783,6 +792,10 @@ void kinc_g5_command_list_get_render_target_pixels(kinc_g5_command_list_t *list,
 
 	setImageLayout(list->impl._buffer, render_target->impl.sourceImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 	               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	// The pass begun again keeps what was drawn before the readback.
+	if (currentRenderPassBeginInfo.renderPass == vk_ctx.windows[vk_ctx.current_window].framebuffer_render_pass) {
+		currentRenderPassBeginInfo.renderPass = vk_ctx.windows[vk_ctx.current_window].framebuffer_render_pass_load;
+	}
 	vkCmdBeginRenderPass(list->impl._buffer, &currentRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 	in_render_pass = true;
 
