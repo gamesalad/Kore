@@ -49,6 +49,9 @@ struct vk_window {
 	VkImage *images;
 	VkImageView *views;
 	VkFramebuffer *framebuffers;
+	// Per swapchain image: used since the swapchain was created. A fresh image is in
+	// UNDEFINED until its first use, after that it returns as PRESENT_SRC_KHR.
+	bool *images_used;
 
 	VkRenderPass framebuffer_render_pass;
 	VkRenderPass rendertarget_render_pass;
