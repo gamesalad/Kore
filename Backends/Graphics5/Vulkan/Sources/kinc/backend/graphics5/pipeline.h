@@ -16,11 +16,15 @@ typedef struct PipelineState5Impl_s {
 	VkShaderModule vert_shader_module;
 	VkShaderModule frag_shader_module;
 
-	kinc_internal_named_number vertexLocations[KINC_INTERNAL_NAMED_NUMBER_COUNT];
-	kinc_internal_named_number fragmentLocations[KINC_INTERNAL_NAMED_NUMBER_COUNT];
-	kinc_internal_named_number textureBindings[KINC_INTERNAL_NAMED_NUMBER_COUNT];
-	kinc_internal_named_number vertexOffsets[KINC_INTERNAL_NAMED_NUMBER_COUNT];
-	kinc_internal_named_number fragmentOffsets[KINC_INTERNAL_NAMED_NUMBER_COUNT];
+	// The shader reflection tables (KINC_INTERNAL_NAMED_NUMBER_COUNT entries each) live in
+	// one heap block allocated by kinc_g5_pipeline_init, so the pipeline struct stays small:
+	// bindings embed it by value in garbage-collected objects (Kha on hxcpp), and inline
+	// tables made it ~42 KB.
+	kinc_internal_named_number *vertexLocations;
+	kinc_internal_named_number *fragmentLocations;
+	kinc_internal_named_number *textureBindings;
+	kinc_internal_named_number *vertexOffsets;
+	kinc_internal_named_number *fragmentOffsets;
 
 	VkPipelineLayout pipeline_layout;
 } PipelineState5Impl;

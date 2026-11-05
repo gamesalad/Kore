@@ -1097,13 +1097,22 @@ void kinc_g5_command_list_wait_for_execution_to_finish(kinc_g5_command_list_t *l
 	retired_list_finished(list);
 }
 
+// A texture unit the shader does not have comes back with stage -1; indexing the
+// binding arrays with it wrote in front of them.
+static bool fragment_unit_valid(kinc_g5_texture_unit_t unit) {
+	return unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT] >= 0 && unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT] < 16;
+}
+
 void kinc_g5_command_list_set_texture(kinc_g5_command_list_t *list, kinc_g5_texture_unit_t unit, kinc_g5_texture_t *texture) {
+	if (!fragment_unit_valid(unit)) {
+		return;
+	}
 	vulkanTextures[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = texture;
 	vulkanRenderTargets[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = NULL;
 }
 
 void kinc_g5_command_list_set_sampler(kinc_g5_command_list_t *list, kinc_g5_texture_unit_t unit, kinc_g5_sampler_t *sampler) {
-	if (unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT] >= 0) {
+	if (fragment_unit_valid(unit)) {
 		vulkanSamplers[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = sampler->impl.sampler;
 	}
 }
@@ -1130,12 +1139,18 @@ bool kinc_g5_command_list_are_query_results_available(kinc_g5_command_list_t *li
 void kinc_g5_command_list_get_query_result(kinc_g5_command_list_t *list, unsigned occlusionQuery, unsigned *pixelCount) {}
 
 void kinc_g5_command_list_set_texture_from_render_target(kinc_g5_command_list_t *list, kinc_g5_texture_unit_t unit, kinc_g5_render_target_t *target) {
+	if (!fragment_unit_valid(unit)) {
+		return;
+	}
 	target->impl.stage = unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT];
 	vulkanRenderTargets[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = target;
 	vulkanTextures[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = NULL;
 }
 
 void kinc_g5_command_list_set_texture_from_render_target_depth(kinc_g5_command_list_t *list, kinc_g5_texture_unit_t unit, kinc_g5_render_target_t *target) {
+	if (!fragment_unit_valid(unit)) {
+		return;
+	}
 	target->impl.stage_depth = unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT];
 	vulkanRenderTargets[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = target;
 	vulkanTextures[unit.stages[KINC_G5_SHADER_TYPE_FRAGMENT]] = NULL;

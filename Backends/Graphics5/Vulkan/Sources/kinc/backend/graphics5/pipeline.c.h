@@ -262,12 +262,26 @@ static VkFormat convert_format(kinc_g5_render_target_format_t format) {
 
 void kinc_g5_pipeline_init(kinc_g5_pipeline_t *pipeline) {
 	kinc_g5_internal_pipeline_init(pipeline);
+
+	kinc_internal_named_number *tables = (kinc_internal_named_number *)calloc(5 * KINC_INTERNAL_NAMED_NUMBER_COUNT, sizeof(kinc_internal_named_number));
+	assert(tables != NULL);
+	pipeline->impl.vertexLocations = tables;
+	pipeline->impl.fragmentLocations = tables + KINC_INTERNAL_NAMED_NUMBER_COUNT;
+	pipeline->impl.textureBindings = tables + 2 * KINC_INTERNAL_NAMED_NUMBER_COUNT;
+	pipeline->impl.vertexOffsets = tables + 3 * KINC_INTERNAL_NAMED_NUMBER_COUNT;
+	pipeline->impl.fragmentOffsets = tables + 4 * KINC_INTERNAL_NAMED_NUMBER_COUNT;
 }
 
 void kinc_g5_pipeline_destroy(kinc_g5_pipeline_t *pipeline) {
 	vkDestroyPipeline(vk_ctx.device, pipeline->impl.framebuffer_pipeline, NULL);
 	vkDestroyPipeline(vk_ctx.device, pipeline->impl.rendertarget_pipeline, NULL);
 	vkDestroyPipelineLayout(vk_ctx.device, pipeline->impl.pipeline_layout, NULL);
+	free(pipeline->impl.vertexLocations); // the start of the block holding all five tables
+	pipeline->impl.vertexLocations = NULL;
+	pipeline->impl.fragmentLocations = NULL;
+	pipeline->impl.textureBindings = NULL;
+	pipeline->impl.vertexOffsets = NULL;
+	pipeline->impl.fragmentOffsets = NULL;
 }
 
 kinc_g5_constant_location_t kinc_g5_pipeline_get_constant_location(kinc_g5_pipeline_t *pipeline, const char *name) {
