@@ -282,15 +282,12 @@ void kinc_g5_render_target_destroy(kinc_g5_render_target_t *target) {
 		framebuffer_count -= 1;
 	}
 	else {
-		vkDestroyFramebuffer(vk_ctx.device, target->impl.framebuffer, NULL);
+		// A command list may still use the target: destroyed once it is done.
+		kinc_vulkan_internal_retire(target->impl.framebuffer, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE);
 		if (target->impl.depthBufferBits > 0) {
-			vkDestroyImageView(vk_ctx.device, target->impl.depthView, NULL);
-			vkDestroyImage(vk_ctx.device, target->impl.depthImage, NULL);
-			vkFreeMemory(vk_ctx.device, target->impl.depthMemory, NULL);
+			kinc_vulkan_internal_retire(VK_NULL_HANDLE, target->impl.depthView, target->impl.depthImage, target->impl.depthMemory);
 		}
-		vkDestroyImageView(vk_ctx.device, target->impl.sourceView, NULL);
-		vkDestroyImage(vk_ctx.device, target->impl.sourceImage, NULL);
-		vkFreeMemory(vk_ctx.device, target->impl.sourceMemory, NULL);
+		kinc_vulkan_internal_retire(VK_NULL_HANDLE, target->impl.sourceView, target->impl.sourceImage, target->impl.sourceMemory);
 	}
 }
 
