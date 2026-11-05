@@ -33,6 +33,62 @@ static VkRenderPass mrtRenderPass[16];
 
 static bool in_render_pass = false;
 
+// True while the command list being recorded holds the acquired swapchain image in
+// COLOR_ATTACHMENT_OPTIMAL and still owes the transition back to PRESENT_SRC_KHR.
+static bool swapchain_image_in_use = false;
+
+// The swapchain image may only be used between kinc_g5_begin (acquire) and kinc_g5_end
+// (present). G4onG5 also records work between frames; the image is not ours then.
+static void use_swapchain_image(kinc_g5_command_list_t *list) {
+	if (swapchain_image_in_use) {
+		return;
+	}
+
+	VkImageMemoryBarrier barrier = {0};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.pNext = NULL;
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.image = vk_ctx.windows[vk_ctx.current_window].images[vk_ctx.windows[vk_ctx.current_window].current_image];
+	vkCmdPipelineBarrier(list->impl._buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+	swapchain_image_in_use = true;
+}
+
+static void release_swapchain_image(kinc_g5_command_list_t *list) {
+	if (!swapchain_image_in_use) {
+		return;
+	}
+
+	VkImageMemoryBarrier barrier = {0};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.pNext = NULL;
+	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.image = vk_ctx.windows[vk_ctx.current_window].images[vk_ctx.windows[vk_ctx.current_window].current_image];
+	vkCmdPipelineBarrier(list->impl._buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+	swapchain_image_in_use = false;
+}
+
 static void endPass(kinc_g5_command_list_t *list) {
 	if (in_render_pass) {
 		vkCmdEndRenderPass(list->impl._buffer);
@@ -289,29 +345,15 @@ void kinc_g5_command_list_begin(kinc_g5_command_list_t *list) {
 	err = vkBeginCommandBuffer(list->impl._buffer, &cmd_buf_info);
 	assert(!err);
 
-	VkImageMemoryBarrier prePresentBarrier = {0};
-	prePresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	prePresentBarrier.pNext = NULL;
-	prePresentBarrier.srcAccessMask = 0;
-	prePresentBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	prePresentBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	prePresentBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	prePresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	prePresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	prePresentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	prePresentBarrier.subresourceRange.baseMipLevel = 0;
-	prePresentBarrier.subresourceRange.levelCount = 1;
-	prePresentBarrier.subresourceRange.baseArrayLayer = 0;
-	prePresentBarrier.subresourceRange.layerCount = 1;
+	swapchain_image_in_use = false;
+	in_render_pass = false;
 
-	prePresentBarrier.image = vk_ctx.windows[vk_ctx.current_window].images[vk_ctx.windows[vk_ctx.current_window].current_image];
-	VkImageMemoryBarrier *pmemory_barrier = &prePresentBarrier;
-	vkCmdPipelineBarrier(list->impl._buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1,
-	                     pmemory_barrier);
-
-	vkCmdBeginRenderPass(list->impl._buffer, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
-	currentRenderPassBeginInfo = rp_begin;
-	in_render_pass = true;
+	if (began) {
+		use_swapchain_image(list);
+		vkCmdBeginRenderPass(list->impl._buffer, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+		currentRenderPassBeginInfo = rp_begin;
+		in_render_pass = true;
+	}
 
 	set_viewport_and_scissor(list);
 
@@ -325,26 +367,12 @@ void kinc_g5_command_list_begin(kinc_g5_command_list_t *list) {
 }
 
 void kinc_g5_command_list_end(kinc_g5_command_list_t *list) {
-	vkCmdEndRenderPass(list->impl._buffer);
+	if (in_render_pass) {
+		vkCmdEndRenderPass(list->impl._buffer);
+		in_render_pass = false;
+	}
 
-	VkImageMemoryBarrier prePresentBarrier = {0};
-	prePresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	prePresentBarrier.pNext = NULL;
-	prePresentBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	prePresentBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	prePresentBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	prePresentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	prePresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	prePresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	prePresentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	prePresentBarrier.subresourceRange.baseMipLevel = 0;
-	prePresentBarrier.subresourceRange.levelCount = 1;
-	prePresentBarrier.subresourceRange.baseArrayLayer = 0;
-	prePresentBarrier.subresourceRange.layerCount = 1;
-
-	prePresentBarrier.image = vk_ctx.windows[vk_ctx.current_window].images[vk_ctx.windows[vk_ctx.current_window].current_image];
-	VkImageMemoryBarrier *pmemory_barrier = &prePresentBarrier;
-	vkCmdPipelineBarrier(list->impl._buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, pmemory_barrier);
+	release_swapchain_image(list);
 
 	VkResult err = vkEndCommandBuffer(list->impl._buffer);
 	assert(!err);
@@ -359,6 +387,11 @@ void kinc_g5_command_list_clear(kinc_g5_command_list_t *list, struct kinc_g5_ren
 	clearRect.rect.extent.height = renderTarget->height;
 	clearRect.baseArrayLayer = 0;
 	clearRect.layerCount = 1;
+
+	if (!in_render_pass) {
+		// Nothing is bound to clear (the backbuffer between frames).
+		return;
+	}
 
 	int count = 0;
 	VkClearAttachment attachments[2];
@@ -391,10 +424,16 @@ void kinc_g5_command_list_draw_indexed_vertices(kinc_g5_command_list_t *list) {
 }
 
 void kinc_g5_command_list_draw_indexed_vertices_from_to(kinc_g5_command_list_t *list, int start, int count) {
+	if (!in_render_pass) {
+		return;
+	}
 	vkCmdDrawIndexed(list->impl._buffer, count, 1, start, 0, 0);
 }
 
 void kinc_g5_command_list_draw_indexed_vertices_from_to_from(kinc_g5_command_list_t *list, int start, int count, int vertex_offset) {
+	if (!in_render_pass) {
+		return;
+	}
 	vkCmdDrawIndexed(list->impl._buffer, count, 1, start, vertex_offset, 0);
 }
 
@@ -403,6 +442,9 @@ void kinc_g5_command_list_draw_indexed_vertices_instanced(kinc_g5_command_list_t
 }
 
 void kinc_g5_command_list_draw_indexed_vertices_instanced_from_to(kinc_g5_command_list_t *list, int instanceCount, int start, int count) {
+	if (!in_render_pass) {
+		return;
+	}
 	vkCmdDrawIndexed(list->impl._buffer, count, instanceCount, start, 0, 0);
 }
 
@@ -511,6 +553,11 @@ void kinc_internal_restore_render_target(kinc_g5_command_list_t *list, struct ki
 
 	currentRenderTargets[0] = NULL;
 	onBackBuffer = true;
+
+	if (!began) {
+		return;
+	}
+	use_swapchain_image(list);
 
 	VkClearValue clear_values[2];
 	memset(clear_values, 0, sizeof(VkClearValue) * 2);
