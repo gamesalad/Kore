@@ -175,8 +175,10 @@ VkSwapchainKHR cleanup_swapchain(int window_index) {
 		}
 		free(window->images);
 		free(window->views);
+		free(window->images_used);
 		window->images = NULL;
 		window->views = NULL;
+		window->images_used = NULL;
 	}
 
 	VkSwapchainKHR chain = window->swapchain;
@@ -305,6 +307,9 @@ void create_swapchain(int window_index) {
 	err = vk.fpGetSwapchainImagesKHR(vk_ctx.device, window->swapchain, &window->image_count, window->images);
 	assert(!err);
 
+	window->images_used = (bool *)calloc(window->image_count, sizeof(bool));
+	assert(window->images_used);
+
 	window->views = (VkImageView *)malloc(window->image_count * sizeof(VkImageView));
 	assert(window->views);
 
@@ -325,11 +330,8 @@ void create_swapchain(int window_index) {
 		color_attachment_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		color_attachment_view.flags = 0;
 
-		// Render loop will expect image to have been used before and in
-		// VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-		// layout and will change to COLOR_ATTACHMENT_OPTIMAL, so init the image
-		// to that state
-		set_image_layout(window->images[i], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		// No layout transition here: a swapchain image may only be used once it has
+		// been acquired. Its first use transitions it from UNDEFINED (images_used).
 
 		color_attachment_view.image = window->images[i];
 

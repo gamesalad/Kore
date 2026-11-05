@@ -49,6 +49,9 @@ struct vk_window {
 	VkImage *images;
 	VkImageView *views;
 	VkFramebuffer *framebuffers;
+	// Per swapchain image: used since the swapchain was created. A fresh image is in
+	// UNDEFINED until its first use, after that it returns as PRESENT_SRC_KHR.
+	bool *images_used;
 
 	// One semaphore per swapchain image, signaled for and waited on by the present of that image.
 	// Acquiring an image again means its previous present has consumed the semaphore.

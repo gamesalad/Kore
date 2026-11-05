@@ -143,7 +143,11 @@ static void use_swapchain_image(kinc_g5_command_list_t *list) {
 	barrier.pNext = NULL;
 	barrier.srcAccessMask = 0;
 	barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	// A swapchain image that has not been used since the swapchain was created is still
+	// in UNDEFINED.
+	struct vk_window *window = &vk_ctx.windows[vk_ctx.current_window];
+	barrier.oldLayout = window->images_used[window->current_image] ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
+	window->images_used[window->current_image] = true;
 	barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
