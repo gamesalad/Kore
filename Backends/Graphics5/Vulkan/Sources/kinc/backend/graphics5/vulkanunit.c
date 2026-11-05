@@ -72,6 +72,7 @@ static VkSemaphore framebuffer_available;
 static VkSemaphore relay_semaphore;
 static bool wait_for_relay = false;
 static void command_list_should_wait_for_framebuffer(void);
+static void command_list_signal_present_semaphore(VkSemaphore present_semaphore);
 static VkDescriptorSetLayout compute_descriptor_layout;
 
 #include "ShaderHash.c.h"

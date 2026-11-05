@@ -50,6 +50,11 @@ struct vk_window {
 	VkImageView *views;
 	VkFramebuffer *framebuffers;
 
+	// One semaphore per swapchain image, signaled for and waited on by the present of that image.
+	// Acquiring an image again means its previous present has consumed the semaphore.
+	VkSemaphore *present_semaphores;
+	uint32_t present_semaphore_count;
+
 	VkRenderPass framebuffer_render_pass;
 	VkRenderPass rendertarget_render_pass;
 	VkRenderPass rendertarget_render_pass_with_depth;

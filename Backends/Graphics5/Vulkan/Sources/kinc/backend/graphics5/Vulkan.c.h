@@ -332,6 +332,23 @@ void create_swapchain(int window_index) {
 
 	window->current_image = 0;
 
+	// Kept across swapchain re-creation and only grown: a semaphore may still be waited on by
+	// a present of the old swapchain.
+	if (window->present_semaphore_count < window->image_count) {
+		window->present_semaphores = (VkSemaphore *)realloc(window->present_semaphores, window->image_count * sizeof(VkSemaphore));
+		assert(window->present_semaphores);
+
+		VkSemaphoreCreateInfo semaphore_info = {0};
+		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		semaphore_info.pNext = NULL;
+		semaphore_info.flags = 0;
+		for (uint32_t i = window->present_semaphore_count; i < window->image_count; ++i) {
+			err = vkCreateSemaphore(vk_ctx.device, &semaphore_info, NULL, &window->present_semaphores[i]);
+			assert(!err);
+		}
+		window->present_semaphore_count = window->image_count;
+	}
+
 	const VkFormat depth_format = VK_FORMAT_D16_UNORM;
 
 	if (window->depth_bits > 0) {
@@ -1098,6 +1115,12 @@ void kinc_g5_internal_destroy_window(int window_index) {
 	destroy_render_target_pass(window);
 	vk.fpDestroySwapchainKHR(vk_ctx.device, swapchain, NULL);
 	vk.fpDestroySurfaceKHR(vk_ctx.instance, window->surface, NULL);
+	for (uint32_t i = 0; i < window->present_semaphore_count; ++i) {
+		vkDestroySemaphore(vk_ctx.device, window->present_semaphores[i], NULL);
+	}
+	free(window->present_semaphores);
+	window->present_semaphores = NULL;
+	window->present_semaphore_count = 0;
 }
 
 bool kinc_window_vsynced(int window) {
@@ -1141,15 +1164,18 @@ void kinc_g5_begin(kinc_g5_render_target_t *renderTarget, int window_index) {
 }
 
 void kinc_g5_end(int window) {
+	struct vk_window *current = &vk_ctx.windows[vk_ctx.current_window];
+	VkSemaphore present_semaphore = current->present_semaphores[current->current_image];
+	command_list_signal_present_semaphore(present_semaphore);
+
 	VkPresentInfoKHR present = {0};
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	present.pNext = NULL;
 	present.swapchainCount = 1;
-	present.pSwapchains = &vk_ctx.windows[vk_ctx.current_window].swapchain;
-	present.pImageIndices = &vk_ctx.windows[vk_ctx.current_window].current_image;
-	present.pWaitSemaphores = &relay_semaphore;
+	present.pSwapchains = &current->swapchain;
+	present.pImageIndices = &current->current_image;
+	present.pWaitSemaphores = &present_semaphore;
 	present.waitSemaphoreCount = 1;
-	wait_for_relay = false;
 
 	VkResult err = vk.fpQueuePresentKHR(vk_ctx.queue, &present);
 	if (err == VK_ERROR_SURFACE_LOST_KHR) {

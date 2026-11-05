@@ -880,6 +880,42 @@ static void command_list_should_wait_for_framebuffer(void) {
 	wait_for_framebuffer = true;
 }
 
+// Submits an empty batch that consumes the pending relay (and acquire) semaphore and signals
+// the semaphore vkQueuePresentKHR waits on. Queue submission order puts the signal after every
+// command list executed so far. relay_semaphore itself cannot be waited on by the present:
+// nothing tells us when that wait finishes, and the next submit signals relay_semaphore again.
+static void command_list_signal_present_semaphore(VkSemaphore present_semaphore) {
+	VkSemaphore wait_semaphores[2];
+	VkPipelineStageFlags wait_stages[2];
+	uint32_t wait_count = 0;
+	if (wait_for_framebuffer) {
+		wait_semaphores[wait_count] = framebuffer_available;
+		wait_stages[wait_count] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+		++wait_count;
+		wait_for_framebuffer = false;
+	}
+	if (wait_for_relay) {
+		wait_semaphores[wait_count] = relay_semaphore;
+		wait_stages[wait_count] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+		++wait_count;
+		wait_for_relay = false;
+	}
+
+	VkSubmitInfo submit_info = {0};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext = NULL;
+	submit_info.waitSemaphoreCount = wait_count;
+	submit_info.pWaitSemaphores = wait_semaphores;
+	submit_info.pWaitDstStageMask = wait_stages;
+	submit_info.commandBufferCount = 0;
+	submit_info.pCommandBuffers = NULL;
+	submit_info.signalSemaphoreCount = 1;
+	submit_info.pSignalSemaphores = &present_semaphore;
+
+	VkResult err = vkQueueSubmit(vk_ctx.queue, 1, &submit_info, VK_NULL_HANDLE);
+	assert(!err);
+}
+
 void kinc_g5_command_list_execute(kinc_g5_command_list_t *list) {
 	// Make sure the previous execution is done, so we can reuse the fence
 	// Not optimal of course
