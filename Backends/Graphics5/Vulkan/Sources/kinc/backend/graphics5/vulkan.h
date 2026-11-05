@@ -88,6 +88,11 @@ extern struct vk_funs vk;
 extern struct vk_context vk_ctx;
 
 extern void flush_init_cmd(void);
+
+// Objects a command list may still use are destroyed only after the GPU is done with them.
+void kinc_vulkan_internal_retire(VkFramebuffer framebuffer, VkImageView view, VkImage image, VkDeviceMemory memory);
+void kinc_vulkan_internal_retired_flush(void);
+void kinc_vulkan_internal_forget_image_view(VkImageView view);
 extern void reuse_descriptor_sets(void);
 extern void reuse_compute_descriptor_sets(void);
 

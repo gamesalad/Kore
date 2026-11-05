@@ -33,6 +33,100 @@ static VkRenderPass mrtRenderPass[16];
 
 static bool in_render_pass = false;
 
+// Deferred destruction. A render target or texture can be destroyed while a
+// command list that uses it is still recording or executing; freeing it at once
+// makes the GPU read freed memory. A retired object waits until every command
+// list that was recording at that moment has been executed, and then until that
+// submission has completed. A fence that signals covers every earlier
+// submission on the queue too, so one completed submission number suffices.
+#define MAX_TRACKED_COMMAND_LISTS 32
+
+typedef struct {
+	VkFramebuffer framebuffer;
+	VkImageView view;
+	VkImage image;
+	VkDeviceMemory memory;
+	uint32_t waiting_lists; // recording lists that have not been executed yet
+	uint64_t submit;        // submission that has to complete, once waiting_lists is 0
+} retired_object;
+
+static kinc_g5_command_list_t *tracked_lists[MAX_TRACKED_COMMAND_LISTS] = {0};
+static retired_object *retired = NULL;
+static int retired_count = 0;
+static int retired_capacity = 0;
+static uint64_t submit_count = 0;
+static uint64_t completed_submit = 0;
+
+void kinc_vulkan_internal_retire(VkFramebuffer framebuffer, VkImageView view, VkImage image, VkDeviceMemory memory) {
+	if (retired_count == retired_capacity) {
+		retired_capacity = retired_capacity == 0 ? 64 : retired_capacity * 2;
+		retired = (retired_object *)realloc(retired, retired_capacity * sizeof(retired_object));
+		assert(retired != NULL);
+	}
+	retired_object *object = &retired[retired_count++];
+	object->framebuffer = framebuffer;
+	object->view = view;
+	object->image = image;
+	object->memory = memory;
+	object->waiting_lists = 0;
+	for (int i = 0; i < MAX_TRACKED_COMMAND_LISTS; ++i) {
+		if (tracked_lists[i] != NULL && tracked_lists[i]->impl.recording) {
+			object->waiting_lists |= 1u << i;
+		}
+	}
+	object->submit = submit_count;
+}
+
+static void retired_list_done(int index) {
+	for (int i = 0; i < retired_count; ++i) {
+		if (retired[i].waiting_lists & (1u << index)) {
+			retired[i].waiting_lists &= ~(1u << index);
+			if (retired[i].waiting_lists == 0) {
+				retired[i].submit = submit_count;
+			}
+		}
+	}
+}
+
+static void retired_destroy_completed(void) {
+	int kept = 0;
+	for (int i = 0; i < retired_count; ++i) {
+		retired_object *object = &retired[i];
+		if (object->waiting_lists == 0 && object->submit <= completed_submit) {
+			if (object->framebuffer != VK_NULL_HANDLE) {
+				vkDestroyFramebuffer(vk_ctx.device, object->framebuffer, NULL);
+			}
+			if (object->view != VK_NULL_HANDLE) {
+				kinc_vulkan_internal_forget_image_view(object->view);
+				vkDestroyImageView(vk_ctx.device, object->view, NULL);
+			}
+			if (object->image != VK_NULL_HANDLE) {
+				vkDestroyImage(vk_ctx.device, object->image, NULL);
+			}
+			if (object->memory != VK_NULL_HANDLE) {
+				vkFreeMemory(vk_ctx.device, object->memory, NULL);
+			}
+		}
+		else {
+			retired[kept++] = *object;
+		}
+	}
+	retired_count = kept;
+}
+
+static void retired_list_finished(kinc_g5_command_list_t *list) {
+	if (list->impl.last_submit > completed_submit) {
+		completed_submit = list->impl.last_submit;
+	}
+	retired_destroy_completed();
+}
+
+// After vkDeviceWaitIdle: everything submitted so far has completed.
+void kinc_vulkan_internal_retired_flush(void) {
+	completed_submit = submit_count;
+	retired_destroy_completed();
+}
+
 static void endPass(kinc_g5_command_list_t *list) {
 	if (in_render_pass) {
 		vkCmdEndRenderPass(list->impl._buffer);
@@ -245,9 +339,26 @@ void kinc_g5_command_list_init(kinc_g5_command_list_t *list) {
 	assert(!err);
 
 	list->impl._indexCount = 0;
+	list->impl.recording = false;
+	list->impl.last_submit = 0;
+	list->impl.index = -1;
+	for (int i = 0; i < MAX_TRACKED_COMMAND_LISTS; ++i) {
+		if (tracked_lists[i] == NULL) {
+			tracked_lists[i] = list;
+			list->impl.index = i;
+			break;
+		}
+	}
+	assert(list->impl.index >= 0);
 }
 
 void kinc_g5_command_list_destroy(kinc_g5_command_list_t *list) {
+	vkWaitForFences(vk_ctx.device, 1, &list->impl.fence, VK_TRUE, UINT64_MAX);
+	if (list->impl.index >= 0) {
+		tracked_lists[list->impl.index] = NULL;
+		retired_list_done(list->impl.index);
+	}
+	retired_list_finished(list);
 	vkFreeCommandBuffers(vk_ctx.device, vk_ctx.cmd_pool, 1, &list->impl._buffer);
 	vkDestroyFence(vk_ctx.device, list->impl.fence, NULL);
 }
@@ -255,6 +366,8 @@ void kinc_g5_command_list_destroy(kinc_g5_command_list_t *list) {
 void kinc_g5_command_list_begin(kinc_g5_command_list_t *list) {
 	VkResult err = vkWaitForFences(vk_ctx.device, 1, &list->impl.fence, VK_TRUE, UINT64_MAX);
 	assert(!err);
+	retired_list_finished(list);
+	list->impl.recording = true;
 
 	vkResetCommandBuffer(list->impl._buffer, 0);
 	VkCommandBufferBeginInfo cmd_buf_info = {0};
@@ -840,6 +953,7 @@ void kinc_g5_command_list_execute(kinc_g5_command_list_t *list) {
 	// Not optimal of course
 	VkResult err = vkWaitForFences(vk_ctx.device, 1, &list->impl.fence, VK_TRUE, UINT64_MAX);
 	assert(!err);
+	retired_list_finished(list);
 	vkResetFences(vk_ctx.device, 1, &list->impl.fence);
 
 	VkPipelineStageFlags pipe_stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -869,11 +983,18 @@ void kinc_g5_command_list_execute(kinc_g5_command_list_t *list) {
 
 	err = vkQueueSubmit(vk_ctx.queue, 1, &submit_info, list->impl.fence);
 	assert(!err);
+
+	list->impl.last_submit = ++submit_count;
+	list->impl.recording = false;
+	if (list->impl.index >= 0) {
+		retired_list_done(list->impl.index);
+	}
 }
 
 void kinc_g5_command_list_wait_for_execution_to_finish(kinc_g5_command_list_t *list) {
 	VkResult err = vkWaitForFences(vk_ctx.device, 1, &list->impl.fence, VK_TRUE, UINT64_MAX);
 	assert(!err);
+	retired_list_finished(list);
 }
 
 void kinc_g5_command_list_set_texture(kinc_g5_command_list_t *list, kinc_g5_texture_unit_t unit, kinc_g5_texture_t *texture) {

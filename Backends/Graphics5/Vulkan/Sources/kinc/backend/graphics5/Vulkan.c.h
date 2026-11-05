@@ -1191,6 +1191,7 @@ void kinc_g5_end(int window) {
 
 void kinc_g5_flush() {
 	vkDeviceWaitIdle(vk_ctx.device);
+	kinc_vulkan_internal_retired_flush();
 }
 
 // this is exclusively used by the Android backend at the moment

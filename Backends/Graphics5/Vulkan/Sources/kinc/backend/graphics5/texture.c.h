@@ -390,8 +390,8 @@ void kinc_g5_texture_init_non_sampled_access(kinc_g5_texture_t *texture, int wid
 }
 
 void kinc_g5_texture_destroy(kinc_g5_texture_t *texture) {
-	vkDestroyImageView(vk_ctx.device, texture->impl.texture.view, NULL);
-	destroy_texture_image(&texture->impl.texture);
+	// A command list may still sample the texture: destroyed once it is done.
+	kinc_vulkan_internal_retire(VK_NULL_HANDLE, texture->impl.texture.view, texture->impl.texture.image, texture->impl.texture.mem);
 }
 
 void kinc_g5_internal_texture_set(kinc_g5_texture_t *texture, int unit) {}

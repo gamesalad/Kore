@@ -1023,6 +1023,29 @@ static void update_compute_textures(struct destriptor_set *set) {
 	}
 }
 
+// A destroyed image view must not be matched again: a new view can get the same
+// handle, and a cached set would then still point at the destroyed image.
+void kinc_vulkan_internal_forget_image_view(VkImageView view) {
+	for (int i = 0; i < descriptor_sets_count; ++i) {
+		for (int j = 0; j < 16; ++j) {
+			if (descriptor_sets[i].tex_desc[j].imageView == view) {
+				memset(&descriptor_sets[i].tex_desc, 0, sizeof(descriptor_sets[i].tex_desc));
+				descriptor_sets[i].in_use = false;
+				break;
+			}
+		}
+	}
+	for (int i = 0; i < compute_descriptor_sets_count; ++i) {
+		for (int j = 0; j < 16; ++j) {
+			if (compute_descriptor_sets[i].tex_desc[j].imageView == view) {
+				memset(&compute_descriptor_sets[i].tex_desc, 0, sizeof(compute_descriptor_sets[i].tex_desc));
+				compute_descriptor_sets[i].in_use = false;
+				break;
+			}
+		}
+	}
+}
+
 void reuse_compute_descriptor_sets(void) {
 	for (int i = 0; i < compute_descriptor_sets_count; ++i) {
 		compute_descriptor_sets[i].in_use = false;
