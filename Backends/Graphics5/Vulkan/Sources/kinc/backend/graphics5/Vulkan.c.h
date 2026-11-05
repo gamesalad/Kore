@@ -815,28 +815,6 @@ void kinc_g5_internal_init() {
 		kinc_error_message("No Vulkan device found");
 	}
 
-	static const char *wanted_device_layers[64];
-	int wanted_device_layer_count = 0;
-
-	uint32_t device_layer_count = 0;
-	err = vkEnumerateDeviceLayerProperties(vk_ctx.gpu, &device_layer_count, NULL);
-	assert(!err);
-
-	if (device_layer_count > 0) {
-		VkLayerProperties *device_layers = (VkLayerProperties *)malloc(sizeof(VkLayerProperties) * device_layer_count);
-		err = vkEnumerateDeviceLayerProperties(vk_ctx.gpu, &device_layer_count, device_layers);
-		assert(!err);
-
-#ifdef VALIDATE
-		vk_ctx.validation_found = find_layer(device_layers, device_layer_count, "VK_LAYER_KHRONOS_validation");
-		if (vk_ctx.validation_found) {
-			wanted_device_layers[wanted_device_layer_count++] = "VK_LAYER_KHRONOS_validation";
-		}
-#endif
-
-		free(device_layers);
-	}
-
 	const char *wanted_device_extensions[64];
 	int wanted_device_extension_count = 0;
 
@@ -988,8 +966,9 @@ void kinc_g5_internal_init() {
 			deviceinfo.queueCreateInfoCount = 1;
 			deviceinfo.pQueueCreateInfos = &queue;
 
-			deviceinfo.enabledLayerCount = wanted_device_layer_count;
-			deviceinfo.ppEnabledLayerNames = (const char *const *)wanted_device_layers;
+			// Device layers are deprecated: layers enabled on the instance apply to the device.
+			deviceinfo.enabledLayerCount = 0;
+			deviceinfo.ppEnabledLayerNames = NULL;
 
 			deviceinfo.enabledExtensionCount = wanted_device_extension_count;
 			deviceinfo.ppEnabledExtensionNames = (const char *const *)wanted_device_extensions;
