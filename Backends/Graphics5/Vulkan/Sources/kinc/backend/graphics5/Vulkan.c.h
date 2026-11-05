@@ -1140,6 +1140,7 @@ void kinc_g5_begin(kinc_g5_render_target_t *renderTarget, int window_index) {
 	if (window->resized) {
 		vkDeviceWaitIdle(vk_ctx.device);
 		create_swapchain(window_index);
+		window->resized = false;
 	}
 
 	// Get the index of the next available swapchain image:
