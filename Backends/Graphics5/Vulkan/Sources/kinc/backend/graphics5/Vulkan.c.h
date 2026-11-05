@@ -42,6 +42,9 @@ VkSampler vulkanSamplers[16] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, 
                                 VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 
 static bool began = false;
+// Set once a render pass has been begun on the acquired swapchain image, so that
+// passes begun on it again in the same frame load what it holds.
+static bool framebuffer_pass_begun = false;
 
 #ifndef KINC_ANDROID
 static VkAllocationCallbacks allocator;
@@ -143,6 +146,10 @@ VkSwapchainKHR cleanup_swapchain(int window_index) {
 
 	if (window->framebuffer_render_pass != VK_NULL_HANDLE) {
 		vkDestroyRenderPass(vk_ctx.device, window->framebuffer_render_pass, NULL);
+	}
+	if (window->framebuffer_render_pass_load != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(vk_ctx.device, window->framebuffer_render_pass_load, NULL);
+		window->framebuffer_render_pass_load = VK_NULL_HANDLE;
 	}
 
 	if (window->framebuffers) {
@@ -457,13 +464,18 @@ void create_swapchain(int window_index) {
 	VkSubpassDependency dependencies[2];
 	memset(&dependencies, 0, sizeof(dependencies));
 
-	// for the frame-buffer
+	// for the frame-buffer. Both framebuffer passes share these dependencies (render
+	// passes that differ in them are not compatible); the attachment writes of an
+	// earlier pass on the image are made visible to the loading pass's reads.
 	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[0].srcStageMask =
+	    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependencies[0].dstStageMask =
+	    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+	                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 	dependencies[1].srcSubpass = 0;
@@ -486,6 +498,15 @@ void create_swapchain(int window_index) {
 
 	err = vkCreateRenderPass(vk_ctx.device, &rp_info, NULL, &window->framebuffer_render_pass);
 	assert(!err);
+
+	// The same pass, loading the image: begun again on the image within a frame
+	// (a command-list flush, a switch back from a render target), a DONT_CARE pass
+	// would drop what the frame already drew, and tiled GPUs start each tile with
+	// stale data. The image is in COLOR_ATTACHMENT_OPTIMAL whenever a pass begins.
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	err = vkCreateRenderPass(vk_ctx.device, &rp_info, NULL, &window->framebuffer_render_pass_load);
+	assert(!err);
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
 	VkImageView attachmentViews[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
@@ -1161,6 +1182,7 @@ void kinc_g5_begin(kinc_g5_render_target_t *renderTarget, int window_index) {
 		else {
 			assert(err == VK_SUCCESS || err == VK_SUBOPTIMAL_KHR);
 			began = true;
+			framebuffer_pass_begun = false;
 			vk_ctx.current_window = window_index;
 			if (renderTarget != NULL) {
 				renderTarget->impl.framebuffer = window->framebuffers[window->current_image];
@@ -1201,6 +1223,7 @@ void kinc_g5_end(int window) {
 	reuse_descriptor_sets();
 	reuse_compute_descriptor_sets();
 	began = false;
+	framebuffer_pass_begun = false;
 }
 
 void kinc_g5_flush() {

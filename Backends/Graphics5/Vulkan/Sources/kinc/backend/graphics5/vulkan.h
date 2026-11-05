@@ -55,7 +55,8 @@ struct vk_window {
 	VkSemaphore *present_semaphores;
 	uint32_t present_semaphore_count;
 
-	VkRenderPass framebuffer_render_pass;
+	VkRenderPass framebuffer_render_pass;      // first pass on an acquired image: its contents are discarded
+	VkRenderPass framebuffer_render_pass_load; // every later pass on that image: its contents are loaded
 	VkRenderPass rendertarget_render_pass;
 	VkRenderPass rendertarget_render_pass_with_depth;
 
