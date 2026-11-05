@@ -57,12 +57,20 @@ static uint32_t queue_count;
 
 static VkBool32 vkDebugUtilsMessengerCallbackEXT(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
+	const char *id_name = pCallbackData->pMessageIdName != NULL ? pCallbackData->pMessageIdName : "";
 	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		kinc_log(KINC_LOG_LEVEL_ERROR, "Vulkan ERROR: Code %d : %s", pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		kinc_log(KINC_LOG_LEVEL_ERROR, "Vulkan ERROR: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		// Validation errors are reported and execution continues, so one run shows every error.
+		// Define KINC_VULKAN_BREAK_ON_VALIDATION_ERROR to stop in the debugger on the first one.
+#ifdef KINC_VULKAN_BREAK_ON_VALIDATION_ERROR
 		kinc_debug_break();
+#endif
 	}
 	else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-		kinc_log(KINC_LOG_LEVEL_WARNING, "Vulkan WARNING: Code %d : %s", pCallbackData->messageIdNumber, pCallbackData->pMessage);
+		kinc_log(KINC_LOG_LEVEL_WARNING, "Vulkan WARNING: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
+	}
+	else {
+		kinc_log(KINC_LOG_LEVEL_INFO, "Vulkan: %s (0x%x): %s", id_name, (unsigned)pCallbackData->messageIdNumber, pCallbackData->pMessage);
 	}
 	return VK_FALSE;
 }
@@ -323,6 +331,23 @@ void create_swapchain(int window_index) {
 	}
 
 	window->current_image = 0;
+
+	// Kept across swapchain re-creation and only grown: a semaphore may still be waited on by
+	// a present of the old swapchain.
+	if (window->present_semaphore_count < window->image_count) {
+		window->present_semaphores = (VkSemaphore *)realloc(window->present_semaphores, window->image_count * sizeof(VkSemaphore));
+		assert(window->present_semaphores);
+
+		VkSemaphoreCreateInfo semaphore_info = {0};
+		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		semaphore_info.pNext = NULL;
+		semaphore_info.flags = 0;
+		for (uint32_t i = window->present_semaphore_count; i < window->image_count; ++i) {
+			err = vkCreateSemaphore(vk_ctx.device, &semaphore_info, NULL, &window->present_semaphores[i]);
+			assert(!err);
+		}
+		window->present_semaphore_count = window->image_count;
+	}
 
 	const VkFormat depth_format = VK_FORMAT_D16_UNORM;
 
@@ -813,28 +838,6 @@ void kinc_g5_internal_init() {
 		kinc_error_message("No Vulkan device found");
 	}
 
-	static const char *wanted_device_layers[64];
-	int wanted_device_layer_count = 0;
-
-	uint32_t device_layer_count = 0;
-	err = vkEnumerateDeviceLayerProperties(vk_ctx.gpu, &device_layer_count, NULL);
-	assert(!err);
-
-	if (device_layer_count > 0) {
-		VkLayerProperties *device_layers = (VkLayerProperties *)malloc(sizeof(VkLayerProperties) * device_layer_count);
-		err = vkEnumerateDeviceLayerProperties(vk_ctx.gpu, &device_layer_count, device_layers);
-		assert(!err);
-
-#ifdef VALIDATE
-		vk_ctx.validation_found = find_layer(device_layers, device_layer_count, "VK_LAYER_KHRONOS_validation");
-		if (vk_ctx.validation_found) {
-			wanted_device_layers[wanted_device_layer_count++] = "VK_LAYER_KHRONOS_validation";
-		}
-#endif
-
-		free(device_layers);
-	}
-
 	const char *wanted_device_extensions[64];
 	int wanted_device_extension_count = 0;
 
@@ -986,8 +989,9 @@ void kinc_g5_internal_init() {
 			deviceinfo.queueCreateInfoCount = 1;
 			deviceinfo.pQueueCreateInfos = &queue;
 
-			deviceinfo.enabledLayerCount = wanted_device_layer_count;
-			deviceinfo.ppEnabledLayerNames = (const char *const *)wanted_device_layers;
+			// Device layers are deprecated: layers enabled on the instance apply to the device.
+			deviceinfo.enabledLayerCount = 0;
+			deviceinfo.ppEnabledLayerNames = NULL;
 
 			deviceinfo.enabledExtensionCount = wanted_device_extension_count;
 			deviceinfo.ppEnabledExtensionNames = (const char *const *)wanted_device_extensions;
@@ -1117,6 +1121,12 @@ void kinc_g5_internal_destroy_window(int window_index) {
 	destroy_render_target_pass(window);
 	vk.fpDestroySwapchainKHR(vk_ctx.device, swapchain, NULL);
 	vk.fpDestroySurfaceKHR(vk_ctx.instance, window->surface, NULL);
+	for (uint32_t i = 0; i < window->present_semaphore_count; ++i) {
+		vkDestroySemaphore(vk_ctx.device, window->present_semaphores[i], NULL);
+	}
+	free(window->present_semaphores);
+	window->present_semaphores = NULL;
+	window->present_semaphore_count = 0;
 }
 
 bool kinc_window_vsynced(int window) {
@@ -1136,6 +1146,7 @@ void kinc_g5_begin(kinc_g5_render_target_t *renderTarget, int window_index) {
 	if (window->resized) {
 		vkDeviceWaitIdle(vk_ctx.device);
 		create_swapchain(window_index);
+		window->resized = false;
 	}
 
 	// Get the index of the next available swapchain image:
@@ -1160,15 +1171,18 @@ void kinc_g5_begin(kinc_g5_render_target_t *renderTarget, int window_index) {
 }
 
 void kinc_g5_end(int window) {
+	struct vk_window *current = &vk_ctx.windows[vk_ctx.current_window];
+	VkSemaphore present_semaphore = current->present_semaphores[current->current_image];
+	command_list_signal_present_semaphore(present_semaphore);
+
 	VkPresentInfoKHR present = {0};
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	present.pNext = NULL;
 	present.swapchainCount = 1;
-	present.pSwapchains = &vk_ctx.windows[vk_ctx.current_window].swapchain;
-	present.pImageIndices = &vk_ctx.windows[vk_ctx.current_window].current_image;
-	present.pWaitSemaphores = &relay_semaphore;
+	present.pSwapchains = &current->swapchain;
+	present.pImageIndices = &current->current_image;
+	present.pWaitSemaphores = &present_semaphore;
 	present.waitSemaphoreCount = 1;
-	wait_for_relay = false;
 
 	VkResult err = vk.fpQueuePresentKHR(vk_ctx.queue, &present);
 	if (err == VK_ERROR_SURFACE_LOST_KHR) {
