@@ -334,7 +334,7 @@ void kinc_g4_internal_init_window(int windowId, int depthBufferBits, int stencil
 	int gl_version = major * 100 + minor * 10;
 #endif
 
-#if defined(KINC_LINUX) || defined(KINC_MACOS)
+#if (defined(KINC_LINUX) || defined(KINC_MACOS)) && !defined(KINC_OPENGL_ES)
 	if (gl_version >= 300) {
 		unsigned vertexArray;
 		glGenVertexArrays(1, &vertexArray);
