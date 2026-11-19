@@ -295,7 +295,7 @@ static int32_t input(struct android_app *app, AInputEvent *event) {
 		if (android_key_hook != NULL) {
 			int32_t action = AKeyEvent_getAction(event);
 			if ((action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_UP) &&
-			    android_key_hook(code, action == AKEY_EVENT_ACTION_DOWN, android_key_hook_data)) {
+			    android_key_hook(code, action == AKEY_EVENT_ACTION_DOWN, event, android_key_hook_data)) {
 				return 1;
 			}
 		}

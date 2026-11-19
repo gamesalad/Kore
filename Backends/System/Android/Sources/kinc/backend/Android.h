@@ -18,7 +18,10 @@ AAssetManager *kinc_android_get_asset_manager(void);
 // keycode → keyboard/gamepad mapping. Return true to claim the event (Kinc
 // then does nothing with it), false to let the default mapping run. Lets an
 // application remap TV-remote / media keys without editing this backend.
-typedef bool (*kinc_android_key_hook_t)(int keycode, bool down, void *userdata);
+// `event` is the key event itself, for the sending device
+// (AInputEvent_getDeviceId, AInputEvent_getSource) or the meta state; valid
+// only during the call.
+typedef bool (*kinc_android_key_hook_t)(int keycode, bool down, const AInputEvent *event, void *userdata);
 void kinc_android_set_key_hook(kinc_android_key_hook_t hook, void *userdata);
 
 #ifdef __cplusplus
